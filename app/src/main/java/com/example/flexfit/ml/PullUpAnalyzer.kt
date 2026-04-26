@@ -18,38 +18,11 @@ enum class PullUpState {
     TOP         // Top position
 }
 
-data class PullUpFeedback(
-    val message: String,
-    val type: FeedbackType
-)
+typealias PullUpFeedback = ExerciseFeedback
+typealias PullUpAnalysisResult = ExerciseAnalysisResult
 
-enum class FeedbackType {
-    INFO,       // Information
-    SUCCESS,    // Success
-    WARNING,    // Warning
-    ERROR       // Error
-}
-
-data class PullUpAnalysisResult(
-    val count: Int = 0,
-    val state: PullUpState = PullUpState.PREPARING,
-    val isReady: Boolean = false,
-    val feedback: PullUpFeedback? = null,
-    val accuracy: Float = 0f,
-    val elapsedTime: Long = 0L,
-    val voiceAction: VoiceAction? = null
-)
-
-enum class VoiceAction {
-    START,       // Workout started
-    SUCCESS,      // Rep completed successfully
-    FAIL,         // Rep failed
-    SWINGING,     // Body swinging
-    SHRUGGING,    // Shrugging
-    NOT_HIGH      // Not pulled high enough
-}
-
-class PullUpAnalyzer(private val pullUpType: PullUpType) {
+class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
+    override val exerciseName: String = "${pullUpType.displayName} Pull-up"
     
     private var state: PullUpState = PullUpState.PREPARING
     private var count: Int = 0
@@ -94,20 +67,18 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) {
         var coefRightEarRightShoulder: Float = 0.5f
     }
     
-    fun analyze(keypoints: FloatArray, timestamp: Long): PullUpAnalysisResult {
+    override fun analyze(keypoints: FloatArray, timestamp: Long): ExerciseAnalysisResult {
         val feedback = mutableListOf<PullUpFeedback>()
 
         if (!PoseKeypoints.isValid(keypoints)) {
-            return PullUpAnalysisResult(
+            return buildResult(
+                timestamp = timestamp,
                 count = count,
-                state = state,
                 isReady = isReady,
                 feedback = PullUpFeedback(
                     message = "Pose data incomplete",
                     type = FeedbackType.ERROR
-                ),
-                accuracy = 0f,
-                elapsedTime = timestamp
+                )
             )
         }
         
@@ -128,13 +99,12 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) {
             val preparationFeedback = handlePreparation(keypoints)
             preparationFeedback?.let { feedback.add(it) }
             prevKeypoints = keypoints
-            return PullUpAnalysisResult(
+            return buildResult(
+                timestamp = timestamp,
                 count = count,
-                state = state,
                 isReady = isReady,
                 feedback = feedback.lastOrNull(),
                 accuracy = calculateAccuracy(keypoints),
-                elapsedTime = timestamp,
                 voiceAction = pendingVoiceAction
             )
         }
@@ -149,15 +119,18 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) {
         
         prevKeypoints = keypoints
         
-        return PullUpAnalysisResult(
+        return buildResult(
+            timestamp = timestamp,
             count = count,
-            state = state,
             isReady = isReady,
             feedback = feedback.lastOrNull(),
             accuracy = calculateAccuracy(keypoints),
-            elapsedTime = timestamp,
             voiceAction = pendingVoiceAction
         )
+    }
+
+    override fun mockFrame(frameCount: Long): FloatArray {
+        return MockPoseSequence.pullUpFrame(frameCount)
     }
     
     private fun handlePreparation(keypoints: FloatArray): PullUpFeedback? {
@@ -298,7 +271,7 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) {
         }
     }
     
-    fun reset() {
+    override fun reset() {
         state = PullUpState.PREPARING
         count = 0
         isReady = false
@@ -308,6 +281,34 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) {
         hintCooldown = 0
         errorCounters = errorCounters.keys.associateWith { 0 }.toMutableMap()
         errorCooldowns = errorCooldowns.keys.associateWith { 0 }.toMutableMap()
+    }
+
+    private fun buildResult(
+        timestamp: Long,
+        count: Int,
+        isReady: Boolean,
+        feedback: PullUpFeedback?,
+        accuracy: Float = 0f,
+        voiceAction: VoiceAction? = null
+    ): ExerciseAnalysisResult {
+        return ExerciseAnalysisResult(
+            count = count,
+            phase = state.toExercisePhase(),
+            isReady = isReady,
+            feedback = feedback,
+            accuracy = accuracy,
+            elapsedTime = timestamp,
+            voiceAction = voiceAction
+        )
+    }
+
+    private fun PullUpState.toExercisePhase(): ExercisePhase {
+        return when (this) {
+            PullUpState.PREPARING -> ExercisePhase("pullup_preparing", "Ready", ExercisePhaseTone.NEUTRAL)
+            PullUpState.DOWN -> ExercisePhase("pullup_down", "Arms Extended", ExercisePhaseTone.WARNING)
+            PullUpState.UP -> ExercisePhase("pullup_up", "Pulling Up", ExercisePhaseTone.ACTIVE)
+            PullUpState.TOP -> ExercisePhase("pullup_top", "Top Position", ExercisePhaseTone.SUCCESS)
+        }
     }
     
     // =========================

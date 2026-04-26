@@ -13,7 +13,7 @@ class PullUpAnalyzerTest {
         val result = analyzer.analyze(readyPose(), timestamp = 1L)
 
         assertEquals(true, result.isReady)
-        assertEquals(PullUpState.DOWN, result.state)
+        assertEquals("pullup_down", result.phase.key)
         assertEquals(0, result.count)
         assertEquals(FeedbackType.SUCCESS, result.feedback?.type)
         assertEquals(VoiceAction.START, result.voiceAction)
@@ -28,9 +28,9 @@ class PullUpAnalyzerTest {
         val top = analyzer.analyze(topPose(), timestamp = 3L)
         val completed = analyzer.analyze(readyPose(), timestamp = 4L)
 
-        assertEquals(PullUpState.UP, pulling.state)
-        assertEquals(PullUpState.TOP, top.state)
-        assertEquals(PullUpState.DOWN, completed.state)
+        assertEquals("pullup_up", pulling.phase.key)
+        assertEquals("pullup_top", top.phase.key)
+        assertEquals("pullup_down", completed.phase.key)
         assertEquals(1, completed.count)
         assertEquals(FeedbackType.SUCCESS, completed.feedback?.type)
         assertEquals(VoiceAction.SUCCESS, completed.voiceAction)
@@ -100,4 +100,3 @@ class PullUpAnalyzerTest {
         PoseKeypoints.set(this, index, x, y, z)
     }
 }
-
