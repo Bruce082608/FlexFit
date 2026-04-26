@@ -193,6 +193,8 @@ fun TrainingScreen(
 
                 PoseOverlay(
                     keypoints = uiState.lastKeypoints,
+                    phaseTone = uiState.result.phase.tone,
+                    feedbackType = uiState.result.feedback?.type,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -207,6 +209,8 @@ fun TrainingScreen(
 
                 PoseOverlay(
                     keypoints = uiState.lastKeypoints,
+                    phaseTone = uiState.result.phase.tone,
+                    feedbackType = uiState.result.feedback?.type,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -441,6 +445,29 @@ private fun TrainingBottomPanel(
                     fontSize = 14.sp
                 )
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            LinearProgressIndicator(
+                progress = { result.accuracy / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = phaseColor(result.phase.tone),
+                trackColor = Color.White.copy(alpha = 0.2f)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                MiniScore(label = "Depth", value = result.scores.depth)
+                MiniScore(label = "Alignment", value = result.scores.alignment)
+                MiniScore(label = "Stability", value = result.scores.stability)
+            }
         }
     }
 }
@@ -464,6 +491,18 @@ private fun StatColumn(
             color = TextSecondary
         )
     }
+}
+
+@Composable
+private fun MiniScore(
+    label: String,
+    value: Float
+) {
+    Text(
+        text = "$label ${value.toInt()}%",
+        fontSize = 12.sp,
+        color = Color.White.copy(alpha = 0.82f)
+    )
 }
 
 @Composable

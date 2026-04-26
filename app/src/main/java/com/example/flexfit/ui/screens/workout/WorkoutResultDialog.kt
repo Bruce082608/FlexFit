@@ -150,7 +150,7 @@ fun WorkoutResultDialog(
                     // Accuracy
                     StatItem(
                         value = "${result.averageAccuracy.roundToInt()}%",
-                        label = "Accuracy",
+                        label = "Score",
                         icon = Icons.Default.Speed,
                         color = SuccessGreen
                     )
@@ -160,6 +160,10 @@ fun WorkoutResultDialog(
 
                 // Accuracy progress bar
                 AccuracyProgressBar(accuracy = result.averageAccuracy)
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                ScoreBreakdownCard(result = result)
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -215,6 +219,10 @@ fun WorkoutResultDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                IssueSummaryCard(result = result)
+
+                Spacer(modifier = Modifier.height(24.dp))
+
                 // Action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -249,6 +257,142 @@ fun WorkoutResultDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ScoreBreakdownCard(result: WorkoutResult) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = LightBackground)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Score Breakdown",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            ScoreRow(label = "Depth", value = result.depthScore)
+            ScoreRow(label = "Alignment", value = result.alignmentScore)
+            ScoreRow(label = "Stability", value = result.stabilityScore)
+        }
+    }
+}
+
+@Composable
+private fun ScoreRow(
+    label: String,
+    value: Float
+) {
+    Column(modifier = Modifier.padding(vertical = 6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+            Text(
+                text = "${value.roundToInt()}%",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = scoreColor(value)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        LinearProgressIndicator(
+            progress = { value / 100f },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp)),
+            color = scoreColor(value),
+            trackColor = Color.LightGray.copy(alpha = 0.3f)
+        )
+    }
+}
+
+@Composable
+private fun IssueSummaryCard(result: WorkoutResult) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = LightBackground)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Main Issues",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            result.mainIssues.forEach { issue ->
+                SummaryLine(text = issue, color = if (issue == "No major issues detected") SuccessGreen else ErrorRed)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Suggestions",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            result.improvementSuggestions.forEach { suggestion ->
+                SummaryLine(text = suggestion, color = AccentPurple)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryLine(
+    text: String,
+    color: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 7.dp)
+                .size(7.dp)
+                .background(color, CircleShape)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary
+        )
+    }
+}
+
+private fun scoreColor(value: Float): Color {
+    return when {
+        value >= 85f -> SuccessGreen
+        value >= 65f -> AccentPurple
+        value >= 45f -> WarningOrange
+        else -> ErrorRed
     }
 }
 

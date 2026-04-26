@@ -15,9 +15,14 @@ data class WorkoutResult(
     val totalReps: Int = 0,
     val completedReps: Int = 0,
     val averageAccuracy: Float = 0f,
+    val depthScore: Float = averageAccuracy,
+    val alignmentScore: Float = averageAccuracy,
+    val stabilityScore: Float = averageAccuracy,
     val caloriesBurned: Float = 0f,
     val errorsCount: Int = 0,
     val warningsCount: Int = 0,
+    val mainIssues: List<String> = emptyList(),
+    val improvementSuggestions: List<String> = emptyList(),
     val feedbackMessages: List<String> = emptyList()
 ) {
     val successRate: Float
@@ -63,6 +68,9 @@ data class WorkoutRecord(
     val totalReps: Int,
     val completedReps: Int,
     val averageAccuracy: Float,
+    val depthScore: Float = averageAccuracy,
+    val alignmentScore: Float = averageAccuracy,
+    val stabilityScore: Float = averageAccuracy,
     val caloriesBurned: Float,
     val errorsCount: Int,
     val warningsCount: Int
@@ -75,6 +83,9 @@ data class WorkoutRecord(
         totalReps = totalReps,
         completedReps = completedReps,
         averageAccuracy = averageAccuracy,
+        depthScore = depthScore,
+        alignmentScore = alignmentScore,
+        stabilityScore = stabilityScore,
         caloriesBurned = caloriesBurned,
         errorsCount = errorsCount,
         warningsCount = warningsCount

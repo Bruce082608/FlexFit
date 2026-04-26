@@ -43,6 +43,9 @@ object WorkoutRecordRepository {
             totalReps = result.totalReps,
             completedReps = result.completedReps,
             averageAccuracy = result.averageAccuracy,
+            depthScore = result.depthScore,
+            alignmentScore = result.alignmentScore,
+            stabilityScore = result.stabilityScore,
             caloriesBurned = result.caloriesBurned,
             errorsCount = result.errorsCount,
             warningsCount = result.warningsCount

@@ -2,6 +2,7 @@ package com.example.flexfit.ml
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PullUpAnalyzerTest {
@@ -32,8 +33,13 @@ class PullUpAnalyzerTest {
         assertEquals("pullup_top", top.phase.key)
         assertEquals("pullup_down", completed.phase.key)
         assertEquals(1, completed.count)
+        assertEquals(1, completed.attemptedReps)
         assertEquals(FeedbackType.SUCCESS, completed.feedback?.type)
         assertEquals(VoiceAction.SUCCESS, completed.voiceAction)
+        assertTrue(completed.scores.depth > 0f)
+        assertTrue(completed.scores.alignment > 0f)
+        assertTrue(completed.scores.stability > 0f)
+        assertEquals(completed.scores.total, completed.accuracy, 0.001f)
     }
 
     @Test
@@ -48,23 +54,100 @@ class PullUpAnalyzerTest {
         assertEquals(0, result.count)
     }
 
-    private fun readyPose(): FloatArray = PoseKeypoints.empty().apply {
+    @Test
+    fun selectedGripWidth_acceptsOnlyMatchingReadyPose() {
+        val wideAnalyzer = PullUpAnalyzer(PullUpType.WIDE)
+        val narrowAnalyzer = PullUpAnalyzer(PullUpType.NARROW)
+        val normalAnalyzer = PullUpAnalyzer(PullUpType.NORMAL)
+
+        assertEquals(true, wideAnalyzer.analyze(readyPose(wristX = 0.55f), timestamp = 1L).isReady)
+        assertEquals(true, narrowAnalyzer.analyze(readyPose(wristX = 0.25f), timestamp = 1L).isReady)
+
+        val normalWithWideGrip = normalAnalyzer.analyze(readyPose(wristX = 0.55f), timestamp = 1L)
+        assertEquals(false, normalWithWideGrip.isReady)
+        assertEquals("grip_width", normalWithWideGrip.issues.first().key)
+        assertEquals(FeedbackType.WARNING, normalWithWideGrip.feedback?.type)
+    }
+
+    @Test
+    fun lowTopPosition_doesNotCountAndReportsHeightError() {
+        val analyzer = PullUpAnalyzer(PullUpType.NORMAL)
+
+        analyzer.analyze(readyPose(), timestamp = 1L)
+        analyzer.analyze(pullingPose(), timestamp = 2L)
+        analyzer.analyze(lowTopPose(), timestamp = 3L)
+        val completed = analyzer.analyze(readyPose(), timestamp = 4L)
+
+        assertEquals(0, completed.count)
+        assertEquals(1, completed.attemptedReps)
+        assertEquals(FeedbackType.ERROR, completed.feedback?.type)
+        assertEquals("not_high", completed.issues.first().key)
+        assertEquals(VoiceAction.FAIL, completed.voiceAction)
+    }
+
+    @Test
+    fun swingingFrames_emitWarningAndBlockRep() {
+        val analyzer = PullUpAnalyzer(PullUpType.NORMAL)
+
+        analyzer.analyze(readyPose(), timestamp = 1L)
+
+        var result = analyzer.analyze(pullingPose(hipShiftX = 0.22f), timestamp = 2L)
+        var warningResult: ExerciseAnalysisResult? = null
+        for (frame in 3L..7L) {
+            val shift = if (frame % 2L == 0L) 0.22f else -0.22f
+            result = analyzer.analyze(pullingPose(hipShiftX = shift), timestamp = frame)
+            if (result.feedback?.type == FeedbackType.WARNING) {
+                warningResult = result
+            }
+        }
+
+        val warning = requireNotNull(warningResult)
+        assertEquals(FeedbackType.WARNING, warning.feedback?.type)
+        assertEquals("swinging", warning.issues.first().key)
+        assertEquals(VoiceAction.SWINGING, warning.voiceAction)
+    }
+
+    @Test
+    fun shruggingAtTop_emitWarning() {
+        val analyzer = PullUpAnalyzer(PullUpType.NORMAL)
+
+        analyzer.analyze(readyPose(), timestamp = 1L)
+        analyzer.analyze(pullingPose(), timestamp = 2L)
+        analyzer.analyze(topPose(), timestamp = 3L)
+
+        var result = analyzer.analyze(shruggingTopPose(), timestamp = 4L)
+        var warningResult: ExerciseAnalysisResult? = null
+        for (frame in 5L..9L) {
+            result = analyzer.analyze(shruggingTopPose(), timestamp = frame)
+            if (result.feedback?.type == FeedbackType.WARNING) {
+                warningResult = result
+            }
+        }
+
+        val warning = requireNotNull(warningResult)
+        assertEquals(FeedbackType.WARNING, warning.feedback?.type)
+        assertEquals("shrugging", warning.issues.first().key)
+        assertEquals(VoiceAction.SHRUGGING, warning.voiceAction)
+    }
+
+    private fun readyPose(wristX: Float = 0.38f): FloatArray = PoseKeypoints.empty().apply {
+        val elbowX = (0.20f + wristX) / 2f
         setPoint(0, 0f, 0.92f)
         setPoint(7, -0.08f, 0.88f)
         setPoint(8, 0.08f, 0.88f)
 
         setPoint(11, -0.20f, 0.20f)
         setPoint(12, 0.20f, 0.20f)
-        setPoint(13, -0.29f, 0.52f)
-        setPoint(14, 0.29f, 0.52f)
-        setPoint(15, -0.38f, 0.84f)
-        setPoint(16, 0.38f, 0.84f)
+        setPoint(13, -elbowX, 0.52f)
+        setPoint(14, elbowX, 0.52f)
+        setPoint(15, -wristX, 0.84f)
+        setPoint(16, wristX, 0.84f)
 
         setPoint(23, -0.15f, -0.20f)
         setPoint(24, 0.15f, -0.20f)
     }
 
-    private fun pullingPose(): FloatArray = PoseKeypoints.empty().apply {
+    private fun pullingPose(hipShiftX: Float = 0f): FloatArray = PoseKeypoints.empty().apply {
         setPoint(0, 0f, 0.88f)
         setPoint(7, -0.08f, 0.84f)
         setPoint(8, 0.08f, 0.84f)
@@ -76,8 +159,8 @@ class PullUpAnalyzerTest {
         setPoint(15, -0.32f, 0.75f)
         setPoint(16, 0.32f, 0.75f)
 
-        setPoint(23, -0.15f, -0.20f)
-        setPoint(24, 0.15f, -0.20f)
+        setPoint(23, -0.15f + hipShiftX, -0.20f)
+        setPoint(24, 0.15f + hipShiftX, -0.20f)
     }
 
     private fun topPose(): FloatArray = PoseKeypoints.empty().apply {
@@ -94,6 +177,17 @@ class PullUpAnalyzerTest {
 
         setPoint(23, -0.15f, 0.15f)
         setPoint(24, 0.15f, 0.15f)
+    }
+
+    private fun lowTopPose(): FloatArray = topPose().apply {
+        setPoint(0, 0f, 0.84f)
+        setPoint(7, -0.08f, 0.80f)
+        setPoint(8, 0.08f, 0.80f)
+    }
+
+    private fun shruggingTopPose(): FloatArray = topPose().apply {
+        setPoint(7, -0.08f, 0.64f)
+        setPoint(8, 0.08f, 0.64f)
     }
 
     private fun FloatArray.setPoint(index: Int, x: Float, y: Float, z: Float = 0f) {

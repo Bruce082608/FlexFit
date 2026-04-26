@@ -18,6 +18,22 @@ data class ExerciseFeedback(
     val type: FeedbackType
 )
 
+data class ExerciseIssue(
+    val key: String,
+    val label: String,
+    val severity: FeedbackType,
+    val suggestion: String
+)
+
+data class ExerciseScoreBreakdown(
+    val depth: Float = 0f,
+    val alignment: Float = 0f,
+    val stability: Float = 0f
+) {
+    val total: Float
+        get() = (depth * 0.45f + alignment * 0.30f + stability * 0.25f).coerceIn(0f, 100f)
+}
+
 enum class FeedbackType {
     INFO,
     SUCCESS,
@@ -44,6 +60,9 @@ data class ExerciseAnalysisResult(
     val isReady: Boolean = false,
     val feedback: ExerciseFeedback? = null,
     val accuracy: Float = 0f,
+    val scores: ExerciseScoreBreakdown = ExerciseScoreBreakdown(),
+    val issues: List<ExerciseIssue> = emptyList(),
+    val attemptedReps: Int = count,
     val elapsedTime: Long = 0L,
     val voiceAction: VoiceAction? = null
 )
