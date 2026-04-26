@@ -47,6 +47,7 @@ import com.example.flexfit.ml.PullUpState
 import com.example.flexfit.ml.PullUpType
 import com.example.flexfit.ml.PoseDetectorWrapper
 import com.example.flexfit.ml.PoseDetectorCallback
+import com.example.flexfit.ml.PoseKeypoints
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -859,7 +860,7 @@ private fun SkeletonOverlay(
     Canvas(modifier = modifier) {
         // Draw skeleton lines when keypoints are available
         keypoints?.let { kp ->
-            if (kp.size >= 57) { // 19 keypoints * 3
+            if (PoseKeypoints.isValid(kp)) {
                 val strokeWidth = 4.dp.toPx()
                 val pointRadius = 8.dp.toPx()
 
@@ -868,18 +869,22 @@ private fun SkeletonOverlay(
                 // Draw connections
                 val connections = listOf(
                     // Left arm
-                    Pair(11, 12), Pair(12, 13), Pair(13, 14),
+                    Pair(11, 13), Pair(13, 15),
                     // Right arm
-                    Pair(11, 15), Pair(15, 16), Pair(16, 17),
+                    Pair(12, 14), Pair(14, 16),
                     // Body
-                    Pair(11, 4), Pair(4, 1),
+                    Pair(11, 12), Pair(11, 23), Pair(12, 24), Pair(23, 24),
                     // Left leg
-                    Pair(4, 5), Pair(5, 6),
+                    Pair(23, 25), Pair(25, 27),
                     // Right leg
-                    Pair(1, 2), Pair(2, 3)
+                    Pair(24, 26), Pair(26, 28)
                 )
 
                 connections.forEach { (start, end) ->
+                    if (!PoseKeypoints.hasPoint(kp, start) || !PoseKeypoints.hasPoint(kp, end)) {
+                        return@forEach
+                    }
+
                     val startX = size.width * (0.5f + kp[start * 3])
                     val startY = size.height * (0.5f - kp[start * 3 + 1])
                     val endX = size.width * (0.5f + kp[end * 3])
@@ -895,7 +900,9 @@ private fun SkeletonOverlay(
                 }
 
                 // Draw keypoints
-                for (i in 0 until 19) {
+                for (i in 0 until PoseKeypoints.LANDMARK_COUNT) {
+                    if (!PoseKeypoints.hasPoint(kp, i)) continue
+
                     val x = size.width * (0.5f + kp[i * 3])
                     val y = size.height * (0.5f - kp[i * 3 + 1])
 
@@ -1020,64 +1027,38 @@ private fun formatTime(seconds: Long): String {
 
 // Mock keypoint generator for simulation (replace with real pose detection)
 private fun generateMockKeypoints(frameCount: Long): FloatArray {
-    val keypoints = FloatArray(19 * 3)
+    val keypoints = PoseKeypoints.empty()
 
     // Simulate a pull-up cycle based on frame count
     val cyclePhase = (frameCount % 180) / 180f * 2 * Math.PI
 
     // Basic body proportions
     // Shoulders (roughly at x=0, y=0.3)
-    keypoints[11 * 3] = -0.15f  // Left shoulder x
-    keypoints[11 * 3 + 1] = 0.25f + 0.05f * kotlin.math.sin(cyclePhase).toFloat()
-    keypoints[11 * 3 + 2] = 0f
-
-    keypoints[14 * 3] = 0.15f  // Right shoulder x
-    keypoints[14 * 3 + 1] = 0.25f + 0.05f * kotlin.math.sin(cyclePhase).toFloat()
-    keypoints[14 * 3 + 2] = 0f
+    val shoulderY = 0.25f + 0.05f * kotlin.math.sin(cyclePhase).toFloat()
+    PoseKeypoints.set(keypoints, 11, -0.15f, shoulderY)
+    PoseKeypoints.set(keypoints, 12, 0.15f, shoulderY)
 
     // Elbows (arms bent during pull)
     val elbowBend = kotlin.math.cos(cyclePhase).toFloat() * 0.15f + 0.3f
-    keypoints[12 * 3] = -0.2f - elbowBend * 0.3f  // Left elbow
-    keypoints[12 * 3 + 1] = 0.15f + elbowBend * 0.1f
-    keypoints[12 * 3 + 2] = 0.1f
-
-    keypoints[15 * 3] = 0.2f + elbowBend * 0.3f  // Right elbow
-    keypoints[15 * 3 + 1] = 0.15f + elbowBend * 0.1f
-    keypoints[15 * 3 + 2] = -0.1f
+    PoseKeypoints.set(keypoints, 13, -0.2f - elbowBend * 0.3f, 0.15f + elbowBend * 0.1f, 0.1f)
+    PoseKeypoints.set(keypoints, 14, 0.2f + elbowBend * 0.3f, 0.15f + elbowBend * 0.1f, -0.1f)
 
     // Wrists (move up and down with pull)
     val wristLift = (kotlin.math.cos(cyclePhase).toFloat() + 1f) * 0.2f
-    keypoints[13 * 3] = -0.25f - elbowBend * 0.4f  // Left wrist
-    keypoints[13 * 3 + 1] = 0.1f + wristLift
-    keypoints[13 * 3 + 2] = 0.15f
-
-    keypoints[16 * 3] = 0.25f + elbowBend * 0.4f  // Right wrist
-    keypoints[16 * 3 + 1] = 0.1f + wristLift
-    keypoints[16 * 3 + 2] = -0.15f
+    PoseKeypoints.set(keypoints, 15, -0.25f - elbowBend * 0.4f, 0.1f + wristLift, 0.15f)
+    PoseKeypoints.set(keypoints, 16, 0.25f + elbowBend * 0.4f, 0.1f + wristLift, -0.15f)
 
     // Hips (stable position)
-    keypoints[1 * 3] = 0.08f  // Right hip
-    keypoints[1 * 3 + 1] = -0.15f
-    keypoints[1 * 3 + 2] = 0f
-
-    keypoints[4 * 3] = -0.08f  // Left hip
-    keypoints[4 * 3 + 1] = -0.15f
-    keypoints[4 * 3 + 2] = 0f
+    PoseKeypoints.set(keypoints, 23, -0.08f, -0.15f)
+    PoseKeypoints.set(keypoints, 24, 0.08f, -0.15f)
 
     // Head (nose position)
     val chinUp = (kotlin.math.cos(cyclePhase).toFloat() + 1f) * 0.1f
-    keypoints[10 * 3] = 0f  // Nose
-    keypoints[10 * 3 + 1] = 0.38f + chinUp
-    keypoints[10 * 3 + 2] = 0f
+    PoseKeypoints.set(keypoints, 0, 0f, 0.38f + chinUp)
 
     // Ears
-    keypoints[17 * 3] = -0.06f  // Left ear
-    keypoints[17 * 3 + 1] = 0.36f + chinUp
-    keypoints[17 * 3 + 2] = 0.05f
-
-    keypoints[18 * 3] = 0.06f  // Right ear
-    keypoints[18 * 3 + 1] = 0.36f + chinUp
-    keypoints[18 * 3 + 2] = -0.05f
+    PoseKeypoints.set(keypoints, 7, -0.06f, 0.36f + chinUp, 0.05f)
+    PoseKeypoints.set(keypoints, 8, 0.06f, 0.36f + chinUp, -0.05f)
 
     return keypoints
 }

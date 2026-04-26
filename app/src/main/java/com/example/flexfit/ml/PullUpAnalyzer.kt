@@ -96,6 +96,20 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) {
     
     fun analyze(keypoints: FloatArray, timestamp: Long): PullUpAnalysisResult {
         val feedback = mutableListOf<PullUpFeedback>()
+
+        if (!PoseKeypoints.isValid(keypoints)) {
+            return PullUpAnalysisResult(
+                count = count,
+                state = state,
+                isReady = isReady,
+                feedback = PullUpFeedback(
+                    message = "Pose data incomplete",
+                    type = FeedbackType.ERROR
+                ),
+                accuracy = 0f,
+                elapsedTime = timestamp
+            )
+        }
         
         // Reset voice action for this frame
         pendingVoiceAction = null

@@ -13,6 +13,15 @@ import com.google.mlkit.vision.pose.accurate.AccuratePoseDetectorOptions
 
 interface PoseDetectorCallback {
     fun onPoseDetected(keypoints: FloatArray, confidence: Float)
+
+    fun onPoseDetected(
+        keypoints: FloatArray,
+        landmarkConfidences: FloatArray,
+        confidence: Float
+    ) {
+        onPoseDetected(keypoints, confidence)
+    }
+
     fun onPoseNotDetected()
     fun onError(error: String)
 }
@@ -62,9 +71,17 @@ class PoseDetectorWrapper {
             poseDetector!!.process(inputImage)
                 .addOnSuccessListener { pose ->
                     if (pose.allPoseLandmarks.isNotEmpty()) {
-                        val keypoints = convertPoseToKeypoints(pose)
+                        val poseFrame = convertPoseToKeypoints(
+                            pose = pose,
+                            imageWidth = imageProxy.width,
+                            imageHeight = imageProxy.height
+                        )
                         val confidence = calculateAverageConfidence(pose)
-                        callback.onPoseDetected(keypoints, confidence)
+                        callback.onPoseDetected(
+                            keypoints = poseFrame.keypoints,
+                            landmarkConfidences = poseFrame.landmarkConfidences,
+                            confidence = confidence
+                        )
                     } else {
                         callback.onPoseNotDetected()
                     }
@@ -81,89 +98,35 @@ class PoseDetectorWrapper {
         }
     }
     
-    private fun convertPoseToKeypoints(pose: Pose): FloatArray {
-        val keypoints = FloatArray(19 * 3) // 19 keypoints * 3 (x, y, z)
-        
-        // ML Kit landmark indices
-        val mlKitLandmarks = mapOf(
-            // Our index -> ML Kit landmark type
-            0 to PoseLandmark.NOSE,
-            1 to PoseLandmark.RIGHT_HIP,
-            2 to PoseLandmark.RIGHT_KNEE,
-            3 to PoseLandmark.RIGHT_ANKLE,
-            4 to PoseLandmark.LEFT_HIP,
-            5 to PoseLandmark.LEFT_KNEE,
-            6 to PoseLandmark.LEFT_ANKLE,
-            7 to PoseLandmark.RIGHT_SHOULDER, // spine approximation
-            8 to PoseLandmark.RIGHT_SHOULDER, // thorax approximation
-            9 to PoseLandmark.RIGHT_SHOULDER, // neck approximation
-            10 to PoseLandmark.NOSE,
-            11 to PoseLandmark.LEFT_SHOULDER,
-            12 to PoseLandmark.LEFT_ELBOW,
-            13 to PoseLandmark.LEFT_WRIST,
-            14 to PoseLandmark.RIGHT_SHOULDER,
-            15 to PoseLandmark.RIGHT_ELBOW,
-            16 to PoseLandmark.RIGHT_WRIST,
-            17 to PoseLandmark.LEFT_EAR,
-            18 to PoseLandmark.RIGHT_EAR
-        )
-        
+    private data class PoseFrame(
+        val keypoints: FloatArray,
+        val landmarkConfidences: FloatArray
+    )
+
+    private fun convertPoseToKeypoints(
+        pose: Pose,
+        imageWidth: Int,
+        imageHeight: Int
+    ): PoseFrame {
+        val keypoints = PoseKeypoints.empty()
+        val landmarkConfidences = PoseKeypoints.emptyConfidences()
+
         pose.allPoseLandmarks.forEach { landmark ->
-            val ourIndex = mlKitLandmarks.entries.find { it.value == landmark.landmarkType }?.key
-            if (ourIndex != null) {
-                keypoints[ourIndex * 3] = landmark.position.x.toFloat()
-                keypoints[ourIndex * 3 + 1] = landmark.position.y.toFloat()
-                keypoints[ourIndex * 3 + 2] = 0f
+            val index = landmark.landmarkType
+            if (index in 0 until PoseKeypoints.LANDMARK_COUNT) {
+                val x = landmark.position.x / imageWidth - 0.5f
+                val y = 0.5f - landmark.position.y / imageHeight
+                val z = landmark.position3D.z / maxOf(imageWidth, imageHeight)
+
+                PoseKeypoints.set(keypoints, index, x, y, z)
+                landmarkConfidences[index] = landmark.inFrameLikelihood
             }
         }
-        
-        // Estimate missing keypoints
-        estimateMissingKeypoints(keypoints, pose)
-        
-        return keypoints
-    }
-    
-    private fun estimateMissingKeypoints(keypoints: FloatArray, pose: Pose) {
-        val leftShoulder = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)
-        val rightShoulder = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
-        val leftHip = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)
-        val rightHip = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)
-        val nose = pose.getPoseLandmark(PoseLandmark.NOSE)
-        
-        // Estimate spine (index 7)
-        if (keypoints[7 * 3] == 0f && leftShoulder != null && leftHip != null) {
-            keypoints[7 * 3] = ((leftShoulder.position.x + leftHip.position.x) / 2).toFloat()
-            keypoints[7 * 3 + 1] = ((leftShoulder.position.y + leftHip.position.y) / 2).toFloat()
-            keypoints[7 * 3 + 2] = 0f
-        }
 
-        // Estimate thorax (index 8) - shoulder center
-        if (keypoints[8 * 3] == 0f && leftShoulder != null && rightShoulder != null) {
-            keypoints[8 * 3] = ((leftShoulder.position.x + rightShoulder.position.x) / 2).toFloat()
-            keypoints[8 * 3 + 1] = ((leftShoulder.position.y + rightShoulder.position.y) / 2).toFloat()
-            keypoints[8 * 3 + 2] = 0f
-        }
-
-        // Estimate neck (index 9) - same as thorax
-        if (keypoints[9 * 3] == 0f && leftShoulder != null && rightShoulder != null) {
-            keypoints[9 * 3] = ((leftShoulder.position.x + rightShoulder.position.x) / 2).toFloat()
-            keypoints[9 * 3 + 1] = ((leftShoulder.position.y + rightShoulder.position.y) / 2).toFloat()
-            keypoints[9 * 3 + 2] = 0f
-        }
-
-        // Estimate pelvis (index 0) - hip center
-        if (keypoints[0 * 3] == 0f && leftHip != null && rightHip != null) {
-            keypoints[0] = ((leftHip.position.x + rightHip.position.x) / 2).toFloat()
-            keypoints[1] = ((leftHip.position.y + rightHip.position.y) / 2).toFloat()
-            keypoints[2] = 0f
-        }
-
-        // Estimate head (index 10) - from nose
-        if (keypoints[10 * 3] == 0f && nose != null) {
-            keypoints[10 * 3] = nose.position.x.toFloat()
-            keypoints[10 * 3 + 1] = (nose.position.y - 50).toFloat()
-            keypoints[10 * 3 + 2] = 0f
-        }
+        return PoseFrame(
+            keypoints = keypoints,
+            landmarkConfidences = landmarkConfidences
+        )
     }
     
     private fun calculateAverageConfidence(pose: Pose): Float {
