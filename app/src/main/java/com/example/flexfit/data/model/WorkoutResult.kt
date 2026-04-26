@@ -73,7 +73,9 @@ data class WorkoutRecord(
     val stabilityScore: Float = averageAccuracy,
     val caloriesBurned: Float,
     val errorsCount: Int,
-    val warningsCount: Int
+    val warningsCount: Int,
+    val mainIssues: List<String> = emptyList(),
+    val improvementSuggestions: List<String> = emptyList()
 ) {
     fun toWorkoutResult(): WorkoutResult = WorkoutResult(
         id = id,
@@ -88,6 +90,15 @@ data class WorkoutRecord(
         stabilityScore = stabilityScore,
         caloriesBurned = caloriesBurned,
         errorsCount = errorsCount,
-        warningsCount = warningsCount
+        warningsCount = warningsCount,
+        mainIssues = mainIssues,
+        improvementSuggestions = improvementSuggestions
     )
 }
+
+data class WorkoutStats(
+    val totalWorkouts: Int = 0,
+    val totalMinutes: Long = 0L,
+    val averageAccuracy: Float = 0f,
+    val currentStreak: Int = 0
+)

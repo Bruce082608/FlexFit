@@ -1,22 +1,48 @@
 package com.example.flexfit.data.repository
 
-import com.example.flexfit.data.model.PerformanceLevel
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import com.example.flexfit.data.model.WorkoutRecord
 import com.example.flexfit.data.model.WorkoutResult
+import com.example.flexfit.data.model.WorkoutStats
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import java.lang.reflect.Type
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+
+private val Context.workoutRecordDataStore by preferencesDataStore(name = "workout_records")
 
 /**
- * Repository for managing workout records.
- * Uses in-memory storage for now, can be extended to use Room/SQLite for persistence.
+ * Repository for persisted workout records.
+ *
+ * DataStore keeps the MVP storage small and dependency-light while still
+ * surviving app restarts.
  */
 object WorkoutRecordRepository {
+    private val gson = Gson()
+    private val recordListType: Type = object : TypeToken<List<WorkoutRecord>>() {}.type
+    private val recordsJsonKey = stringPreferencesKey("records_json")
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private var dataStore: DataStore<Preferences>? = null
+    private var initialized = false
 
     private val _workoutRecords = MutableStateFlow<List<WorkoutRecord>>(emptyList())
     val workoutRecords: StateFlow<List<WorkoutRecord>> = _workoutRecords.asStateFlow()
 
-    // Statistics
     private val _totalWorkouts = MutableStateFlow(0)
     val totalWorkouts: StateFlow<Int> = _totalWorkouts.asStateFlow()
 
@@ -29,33 +55,31 @@ object WorkoutRecordRepository {
     private val _currentStreak = MutableStateFlow(0)
     val currentStreak: StateFlow<Int> = _currentStreak.asStateFlow()
 
-    init {
-        // Load sample data for demonstration
-        loadSampleData()
+    fun initialize(context: Context) {
+        if (initialized) return
+
+        initialized = true
+        val store = context.applicationContext.workoutRecordDataStore
+        dataStore = store
+
+        repositoryScope.launch {
+            store.data
+                .map { preferences -> decodeRecordsJson(preferences[recordsJsonKey]) }
+                .catch { emit(emptyList()) }
+                .collect { records -> replaceRecords(records) }
+        }
     }
 
     fun addWorkoutResult(result: WorkoutResult) {
-        val record = WorkoutRecord(
-            id = result.id,
-            exerciseType = result.exerciseType,
-            date = result.date,
-            durationSeconds = result.durationSeconds,
-            totalReps = result.totalReps,
-            completedReps = result.completedReps,
-            averageAccuracy = result.averageAccuracy,
-            depthScore = result.depthScore,
-            alignmentScore = result.alignmentScore,
-            stabilityScore = result.stabilityScore,
-            caloriesBurned = result.caloriesBurned,
-            errorsCount = result.errorsCount,
-            warningsCount = result.warningsCount
-        )
+        val record = result.toRecord()
+        replaceRecords(upsertRecord(_workoutRecords.value, record))
 
-        val currentList = _workoutRecords.value.toMutableList()
-        currentList.add(0, record) // Add to beginning (newest first)
-        _workoutRecords.value = currentList
-
-        updateStatistics()
+        repositoryScope.launch {
+            dataStore?.edit { preferences ->
+                val storedRecords = decodeRecordsJson(preferences[recordsJsonKey])
+                preferences[recordsJsonKey] = encodeRecordsJson(upsertRecord(storedRecords, record))
+            }
+        }
     }
 
     fun getWorkoutRecords(): List<WorkoutRecord> = _workoutRecords.value
@@ -69,94 +93,102 @@ object WorkoutRecordRepository {
     }
 
     fun clearAllRecords() {
-        _workoutRecords.value = emptyList()
-        updateStatistics()
-    }
+        replaceRecords(emptyList())
 
-    private fun updateStatistics() {
-        val records = _workoutRecords.value
-
-        _totalWorkouts.value = records.size
-        _totalMinutes.value = records.sumOf { it.durationSeconds } / 60
-
-        _averageAccuracy.value = if (records.isNotEmpty()) {
-            records.map { it.averageAccuracy }.average().toFloat()
-        } else 0f
-
-        // Calculate streak (simplified - counts consecutive days with workouts)
-        _currentStreak.value = calculateStreak(records)
-    }
-
-    private fun calculateStreak(records: List<WorkoutRecord>): Int {
-        if (records.isEmpty()) return 0
-
-        val sortedRecords = records.sortedByDescending { it.date }
-        val today = System.currentTimeMillis()
-        val oneDayMs = 24 * 60 * 60 * 1000L
-
-        var streak = 0
-        var expectedDay = today
-
-        for (record in sortedRecords) {
-            val recordDay = record.date / oneDayMs
-            val expectedDayNum = expectedDay / oneDayMs
-
-            when {
-                recordDay == expectedDayNum -> {
-                    streak++
-                    expectedDay -= oneDayMs
-                }
-                recordDay == expectedDayNum - 1 -> {
-                    expectedDay = record.date
-                    streak++
-                    expectedDay -= oneDayMs
-                }
-                else -> break
+        repositoryScope.launch {
+            dataStore?.edit { preferences ->
+                preferences.remove(recordsJsonKey)
             }
         }
+    }
 
+    fun calculateStats(
+        records: List<WorkoutRecord>,
+        nowMillis: Long = System.currentTimeMillis()
+    ): WorkoutStats {
+        if (records.isEmpty()) return WorkoutStats()
+
+        return WorkoutStats(
+            totalWorkouts = records.size,
+            totalMinutes = records.sumOf { it.durationSeconds } / 60L,
+            averageAccuracy = records.map { it.averageAccuracy }.average().toFloat(),
+            currentStreak = calculateStreak(records, nowMillis)
+        )
+    }
+
+    internal fun encodeRecordsJson(records: List<WorkoutRecord>): String {
+        return gson.toJson(records.sortedByDescending { it.date })
+    }
+
+    internal fun decodeRecordsJson(json: String?): List<WorkoutRecord> {
+        if (json.isNullOrBlank()) return emptyList()
+
+        return runCatching {
+            val decoded = gson.fromJson<List<WorkoutRecord>>(json, recordListType)
+            decoded.orEmpty().sortedByDescending { it.date }
+        }.getOrElse { emptyList() }
+    }
+
+    private fun replaceRecords(records: List<WorkoutRecord>) {
+        val sortedRecords = records.sortedByDescending { it.date }
+        val stats = calculateStats(sortedRecords)
+
+        _workoutRecords.value = sortedRecords
+        _totalWorkouts.value = stats.totalWorkouts
+        _totalMinutes.value = stats.totalMinutes
+        _averageAccuracy.value = stats.averageAccuracy
+        _currentStreak.value = stats.currentStreak
+    }
+
+    private fun upsertRecord(
+        records: List<WorkoutRecord>,
+        record: WorkoutRecord
+    ): List<WorkoutRecord> {
+        return (listOf(record) + records.filterNot { it.id == record.id })
+            .sortedByDescending { it.date }
+    }
+
+    private fun WorkoutResult.toRecord(): WorkoutRecord {
+        return WorkoutRecord(
+            id = id,
+            exerciseType = exerciseType,
+            date = date,
+            durationSeconds = durationSeconds,
+            totalReps = totalReps,
+            completedReps = completedReps,
+            averageAccuracy = averageAccuracy,
+            depthScore = depthScore,
+            alignmentScore = alignmentScore,
+            stabilityScore = stabilityScore,
+            caloriesBurned = caloriesBurned,
+            errorsCount = errorsCount,
+            warningsCount = warningsCount,
+            mainIssues = mainIssues,
+            improvementSuggestions = improvementSuggestions
+        )
+    }
+
+    private fun calculateStreak(
+        records: List<WorkoutRecord>,
+        nowMillis: Long
+    ): Int {
+        val workoutDays = records.map { it.date / ONE_DAY_MS }.toSet()
+        if (workoutDays.isEmpty()) return 0
+
+        val today = nowMillis / ONE_DAY_MS
+        var cursor = when {
+            today in workoutDays -> today
+            today - 1 in workoutDays -> today - 1
+            else -> return 0
+        }
+
+        var streak = 0
+        while (cursor in workoutDays) {
+            streak++
+            cursor--
+        }
         return streak
     }
 
-    // Sample data for demonstration
-    private fun loadSampleData() {
-        val sampleRecords = listOf(
-            WorkoutRecord(
-                exerciseType = "Pull Up",
-                date = System.currentTimeMillis() - 1 * 24 * 60 * 60 * 1000,
-                durationSeconds = 1200,
-                totalReps = 15,
-                completedReps = 12,
-                averageAccuracy = 85f,
-                caloriesBurned = 120f,
-                errorsCount = 3,
-                warningsCount = 5
-            ),
-            WorkoutRecord(
-                exerciseType = "Pull Up",
-                date = System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000,
-                durationSeconds = 1080,
-                totalReps = 12,
-                completedReps = 10,
-                averageAccuracy = 82f,
-                caloriesBurned = 105f,
-                errorsCount = 2,
-                warningsCount = 4
-            ),
-            WorkoutRecord(
-                exerciseType = "Shoulder Press",
-                date = System.currentTimeMillis() - 3 * 24 * 60 * 60 * 1000,
-                durationSeconds = 900,
-                totalReps = 20,
-                completedReps = 18,
-                averageAccuracy = 88f,
-                caloriesBurned = 95f,
-                errorsCount = 2,
-                warningsCount = 3
-            )
-        )
-
-        _workoutRecords.value = sampleRecords
-        updateStatistics()
-    }
+    private const val ONE_DAY_MS = 24L * 60L * 60L * 1000L
 }

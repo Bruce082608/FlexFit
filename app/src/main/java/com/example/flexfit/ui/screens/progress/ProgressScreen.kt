@@ -3,8 +3,6 @@ package com.example.flexfit.ui.screens.progress
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,18 +22,32 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.flexfit.data.model.WorkoutRecord
+import com.example.flexfit.data.model.WorkoutStats
 import com.example.flexfit.data.repository.WorkoutRecordRepository
 import com.example.flexfit.ui.theme.*
-import kotlin.math.cos
-import kotlin.math.sin
 
 @Composable
 fun ProgressScreen() {
     val records by WorkoutRecordRepository.workoutRecords.collectAsState()
-    val totalWorkouts by WorkoutRecordRepository.totalWorkouts.collectAsState()
-    val totalMinutes by WorkoutRecordRepository.totalMinutes.collectAsState()
-    val averageAccuracy by WorkoutRecordRepository.averageAccuracy.collectAsState()
-    val currentStreak by WorkoutRecordRepository.currentStreak.collectAsState()
+    var selectedExercise by remember { mutableStateOf(ALL_EXERCISES_FILTER) }
+    val exerciseFilters = remember(records) {
+        listOf(ALL_EXERCISES_FILTER) + records.map { it.exerciseType }.distinct().sorted()
+    }
+    LaunchedEffect(exerciseFilters) {
+        if (selectedExercise !in exerciseFilters) {
+            selectedExercise = ALL_EXERCISES_FILTER
+        }
+    }
+    val filteredRecords = remember(records, selectedExercise) {
+        if (selectedExercise == ALL_EXERCISES_FILTER) {
+            records
+        } else {
+            records.filter { it.exerciseType == selectedExercise }
+        }
+    }
+    val filteredStats = remember(filteredRecords) {
+        WorkoutRecordRepository.calculateStats(filteredRecords)
+    }
 
     Column(
         modifier = Modifier
@@ -56,16 +68,20 @@ fun ProgressScreen() {
 
         // Stats Cards Row
         StatsCardsRow(
-            totalWorkouts = totalWorkouts,
-            totalMinutes = totalMinutes,
-            averageAccuracy = averageAccuracy,
-            currentStreak = currentStreak
+            stats = filteredStats
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
         // Workout Records Section
-        WorkoutRecordsSection(records = records)
+        WorkoutRecordsSection(
+            allRecords = records,
+            records = filteredRecords,
+            filters = exerciseFilters,
+            selectedExercise = selectedExercise,
+            onFilterSelected = { selectedExercise = it },
+            onClearAll = WorkoutRecordRepository::clearAllRecords
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -85,12 +101,23 @@ fun ProgressScreen() {
         Spacer(modifier = Modifier.height(24.dp))
 
         // Tips Section
-        TipsSection()
+        TipsSection(records = filteredRecords)
     }
 }
 
+private const val ALL_EXERCISES_FILTER = "All"
+
 @Composable
-private fun WorkoutRecordsSection(records: List<WorkoutRecord>) {
+private fun WorkoutRecordsSection(
+    allRecords: List<WorkoutRecord>,
+    records: List<WorkoutRecord>,
+    filters: List<String>,
+    selectedExercise: String,
+    onFilterSelected: (String) -> Unit,
+    onClearAll: () -> Unit
+) {
+    var showClearDialog by remember { mutableStateOf(false) }
+
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -103,14 +130,39 @@ private fun WorkoutRecordsSection(records: List<WorkoutRecord>) {
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
-            Text(
-                text = "${records.size} sessions",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "${records.size} sessions",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+                if (allRecords.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = { showClearDialog = true }) {
+                        Text("Clear", color = ErrorRed)
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        if (filters.size > 1) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                filters.forEach { filter ->
+                    FilterChip(
+                        selected = selectedExercise == filter,
+                        onClick = { onFilterSelected(filter) },
+                        label = { Text(filter) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         if (records.isEmpty()) {
             Card(
@@ -132,23 +184,50 @@ private fun WorkoutRecordsSection(records: List<WorkoutRecord>) {
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "No workouts yet",
+                        text = if (allRecords.isEmpty()) "No workouts yet" else "No matching workouts",
                         style = MaterialTheme.typography.bodyLarge,
                         color = TextSecondary
                     )
                     Text(
-                        text = "Complete a workout to see your history",
+                        text = if (allRecords.isEmpty()) {
+                            "Complete a workout to see your history"
+                        } else {
+                            "Choose another exercise filter"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary
                     )
                 }
             }
         } else {
-            records.take(5).forEach { record ->
+            records.forEach { record ->
                 WorkoutRecordItem(record = record)
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
+    }
+
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("Clear training history?") },
+            text = { Text("This removes all saved workout records from this device.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearDialog = false
+                        onClearAll()
+                    }
+                ) {
+                    Text("Clear", color = ErrorRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -250,10 +329,7 @@ private fun WorkoutRecordItem(record: WorkoutRecord) {
 
 @Composable
 private fun StatsCardsRow(
-    totalWorkouts: Int,
-    totalMinutes: Long,
-    averageAccuracy: Float,
-    currentStreak: Int
+    stats: WorkoutStats
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -262,14 +338,14 @@ private fun StatsCardsRow(
         StatCard(
             icon = Icons.Default.SportsScore,
             title = "Total Workouts",
-            value = totalWorkouts.toString(),
+            value = stats.totalWorkouts.toString(),
             color = DeepPurple,
             modifier = Modifier.weight(1f)
         )
         StatCard(
             icon = Icons.Default.Schedule,
             title = "Total Minutes",
-            value = totalMinutes.toString(),
+            value = stats.totalMinutes.toString(),
             color = AccentPurple,
             modifier = Modifier.weight(1f)
         )
@@ -284,14 +360,14 @@ private fun StatsCardsRow(
         StatCard(
             icon = Icons.Default.TrendingUp,
             title = "Avg Accuracy",
-            value = "${averageAccuracy.toInt()}%",
+            value = "${stats.averageAccuracy.toInt()}%",
             color = SuccessGreen,
             modifier = Modifier.weight(1f)
         )
         StatCard(
             icon = Icons.Default.LocalFireDepartment,
             title = "Streak Days",
-            value = currentStreak.toString(),
+            value = stats.currentStreak.toString(),
             color = WarningOrange,
             modifier = Modifier.weight(1f)
         )
@@ -432,10 +508,8 @@ private fun WeeklyTrainingChart(records: List<WorkoutRecord>) {
 
 @Composable
 private fun AccuracyTrendChart(records: List<WorkoutRecord>) {
-    // Get accuracy data from recent records
     val accuracyData = records.take(7).map { it.averageAccuracy }.reversed()
-    val displayData = if (accuracyData.isEmpty()) listOf(75f, 82f, 78f, 88f, 85f, 92f, 89f) else accuracyData
-    val avgAccuracy = if (displayData.isNotEmpty()) displayData.average().toFloat() else 0f
+    val avgAccuracy = if (accuracyData.isNotEmpty()) accuracyData.average().toFloat() else 0f
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -461,80 +535,79 @@ private fun AccuracyTrendChart(records: List<WorkoutRecord>) {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Line Chart
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp)
-            ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val width = size.width
-                    val height = size.height
-                    val stepX = if (displayData.size > 1) width / (displayData.size - 1) else width
-                    val maxY = 100f
+            if (accuracyData.isEmpty()) {
+                EmptyCardMessage(text = "Complete workouts to see your accuracy trend.")
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val width = size.width
+                        val height = size.height
+                        val stepX = if (accuracyData.size > 1) width / (accuracyData.size - 1) else width
+                        val maxY = 100f
 
-                    // Draw grid lines
-                    for (i in 0..4) {
-                        val y = height - (height * i / 4)
-                        drawLine(
-                            color = Color.LightGray.copy(alpha = 0.5f),
-                            start = Offset(0f, y),
-                            end = Offset(width, y),
-                            strokeWidth = 1f
+                        for (i in 0..4) {
+                            val y = height - (height * i / 4)
+                            drawLine(
+                                color = Color.LightGray.copy(alpha = 0.5f),
+                                start = Offset(0f, y),
+                                end = Offset(width, y),
+                                strokeWidth = 1f
+                            )
+                        }
+
+                        val path = Path()
+                        accuracyData.forEachIndexed { index, value ->
+                            val x = index * stepX
+                            val y = height - (value / maxY * height)
+
+                            if (index == 0) {
+                                path.moveTo(x, y)
+                            } else {
+                                path.lineTo(x, y)
+                            }
+                        }
+
+                        drawPath(
+                            path = path,
+                            color = DeepPurple,
+                            style = Stroke(width = 3f)
                         )
-                    }
 
-                    // Draw line chart
-                    val path = Path()
-                    displayData.forEachIndexed { index, value ->
-                        val x = index * stepX
-                        val y = height - (value / maxY * height)
+                        accuracyData.forEachIndexed { index, value ->
+                            val x = index * stepX
+                            val y = height - (value / maxY * height)
 
-                        if (index == 0) {
-                            path.moveTo(x, y)
-                        } else {
-                            path.lineTo(x, y)
+                            drawCircle(
+                                color = DeepPurple,
+                                radius = 6f,
+                                center = Offset(x, y)
+                            )
+                            drawCircle(
+                                color = Color.White,
+                                radius = 3f,
+                                center = Offset(x, y)
+                            )
                         }
                     }
-
-                    drawPath(
-                        path = path,
-                        color = DeepPurple,
-                        style = Stroke(width = 3f)
-                    )
-
-                    // Draw points
-                    displayData.forEachIndexed { index, value ->
-                        val x = index * stepX
-                        val y = height - (value / maxY * height)
-
-                        drawCircle(
-                            color = DeepPurple,
-                            radius = 6f,
-                            center = Offset(x, y)
-                        )
-                        drawCircle(
-                            color = Color.White,
-                            radius = 3f,
-                            center = Offset(x, y)
-                        )
-                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            // Legend
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "Avg: ${avgAccuracy.toInt()}%",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SuccessGreen,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Avg: ${avgAccuracy.toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SuccessGreen,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }
@@ -542,17 +615,10 @@ private fun AccuracyTrendChart(records: List<WorkoutRecord>) {
 
 @Composable
 private fun ExerciseDistribution(records: List<WorkoutRecord>) {
-    // Calculate distribution from records
     val exerciseCounts = records.groupBy { it.exerciseType }
         .mapValues { it.value.size }
         .toList()
         .sortedByDescending { it.second }
-
-    val displayData = if (exerciseCounts.isEmpty()) {
-        listOf("Pull Up" to 10, "Shoulder Press" to 8, "Squat" to 4, "Others" to 2)
-    } else {
-        exerciseCounts
-    }
 
     val colors = listOf(DeepPurple, AccentPurple, LightPurple, SuccessGreen, WarningOrange)
 
@@ -580,62 +646,76 @@ private fun ExerciseDistribution(records: List<WorkoutRecord>) {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Pie Chart
-                Box(
-                    modifier = Modifier.size(120.dp),
-                    contentAlignment = Alignment.Center
+            if (exerciseCounts.isEmpty()) {
+                EmptyCardMessage(text = "Complete workouts to see exercise distribution.")
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val total = displayData.sumOf { it.second }.toFloat()
+                    Box(
+                        modifier = Modifier.size(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val total = exerciseCounts.sumOf { it.second }.toFloat()
 
-                        if (total > 0) {
-                            var startAngle = -90f
-                            displayData.forEachIndexed { index, (_, count) ->
-                                val sweepAngle = (count / total) * 360f
-                                drawArc(
-                                    color = colors[index % colors.size],
-                                    startAngle = startAngle,
-                                    sweepAngle = sweepAngle,
-                                    useCenter = true,
-                                    size = Size(size.width, size.height)
-                                )
-                                startAngle += sweepAngle
+                            if (total > 0) {
+                                var startAngle = -90f
+                                exerciseCounts.forEachIndexed { index, (_, count) ->
+                                    val sweepAngle = (count / total) * 360f
+                                    drawArc(
+                                        color = colors[index % colors.size],
+                                        startAngle = startAngle,
+                                        sweepAngle = sweepAngle,
+                                        useCenter = true,
+                                        size = Size(size.width, size.height)
+                                    )
+                                    startAngle += sweepAngle
+                                }
                             }
                         }
+
+                        Text(
+                            text = "${records.size}",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
                     }
 
-                    Text(
-                        text = "${records.size}",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                }
-
-                // Legend
-                Column(
-                    modifier = Modifier.padding(start = 16.dp)
-                ) {
-                    displayData.forEachIndexed { index, (name, count) ->
-                        val percentage = if (records.isNotEmpty()) {
-                            (count.toFloat() / records.size * 100).toInt()
-                        } else {
-                            0
+                    Column(
+                        modifier = Modifier.padding(start = 16.dp)
+                    ) {
+                        exerciseCounts.forEachIndexed { index, (name, count) ->
+                            val percentage = (count.toFloat() / records.size * 100).toInt()
+                            LegendItem(
+                                color = colors[index % colors.size],
+                                label = name,
+                                percentage = "$percentage%"
+                            )
                         }
-                        LegendItem(
-                            color = colors[index % colors.size],
-                            label = name,
-                            percentage = "$percentage%"
-                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EmptyCardMessage(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(96.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextTertiary
+        )
     }
 }
 
@@ -671,7 +751,19 @@ private fun LegendItem(
 }
 
 @Composable
-private fun TipsSection() {
+private fun TipsSection(records: List<WorkoutRecord>) {
+    val tips = remember(records) {
+        val suggestions = records
+            .flatMap { it.improvementSuggestions }
+            .filter { it.isNotBlank() }
+        val issueTips = records
+            .flatMap { it.mainIssues }
+            .filter { it.isNotBlank() && it != "No major issues detected" }
+            .map { "Focus on: $it." }
+
+        (suggestions + issueTips).distinct().take(3)
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -692,25 +784,32 @@ private fun TipsSection() {
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "Based on your recent training data, here are some personalized suggestions:",
+                text = if (records.isEmpty()) {
+                    "Complete a workout to generate personalized suggestions."
+                } else {
+                    "Based on your recent training data, here are some personalized suggestions:"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            TipItem(
-                tip = "Try to shrug less during pull-ups. Focus on engaging your back muscles.",
-                icon = "1"
-            )
-            TipItem(
-                tip = "Your shoulder press form is improving! Keep your core engaged.",
-                icon = "2"
-            )
-            TipItem(
-                tip = "Consider adding more rest days between intense sessions.",
-                icon = "3"
-            )
+            if (records.isEmpty()) {
+                EmptyCardMessage(text = "Complete a workout to generate personalized suggestions.")
+            } else if (tips.isEmpty()) {
+                TipItem(
+                    tip = "No major issues detected. Keep your current form.",
+                    icon = "1"
+                )
+            } else {
+                tips.forEachIndexed { index, tip ->
+                    TipItem(
+                        tip = tip,
+                        icon = "${index + 1}"
+                    )
+                }
+            }
         }
     }
 }

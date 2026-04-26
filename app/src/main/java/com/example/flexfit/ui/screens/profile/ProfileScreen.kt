@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.flexfit.data.repository.WorkoutRecordRepository
 import com.example.flexfit.ui.theme.AccentPurple
 import com.example.flexfit.ui.theme.DeepPurple
 import com.example.flexfit.ui.theme.ErrorRed
@@ -65,6 +67,9 @@ fun ProfileScreen() {
     var height by remember { mutableStateOf("170") }
     var weight by remember { mutableStateOf("70") }
     var fitnessGoal by remember { mutableStateOf("Build Strength") }
+    val totalWorkouts by WorkoutRecordRepository.totalWorkouts.collectAsState()
+    val averageAccuracy by WorkoutRecordRepository.averageAccuracy.collectAsState()
+    val currentStreak by WorkoutRecordRepository.currentStreak.collectAsState()
 
     Column(
         modifier = Modifier
@@ -73,7 +78,11 @@ fun ProfileScreen() {
             .verticalScroll(rememberScrollState())
     ) {
         // Profile Header with Gradient
-        ProfileHeader()
+        ProfileHeader(
+            totalWorkouts = totalWorkouts,
+            currentStreak = currentStreak,
+            averageAccuracy = averageAccuracy
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -108,7 +117,11 @@ fun ProfileScreen() {
 }
 
 @Composable
-private fun ProfileHeader() {
+private fun ProfileHeader(
+    totalWorkouts: Int,
+    currentStreak: Int,
+    averageAccuracy: Float
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -163,9 +176,9 @@ private fun ProfileHeader() {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                ProfileStat(value = "24", label = "Workouts")
-                ProfileStat(value = "7", label = "Day Streak")
-                ProfileStat(value = "85%", label = "Avg Score")
+                ProfileStat(value = "$totalWorkouts", label = "Workouts")
+                ProfileStat(value = "$currentStreak", label = "Day Streak")
+                ProfileStat(value = "${averageAccuracy.toInt()}%", label = "Avg Score")
             }
         }
     }
