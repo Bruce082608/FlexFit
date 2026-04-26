@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- FlexFit Theme Colors -->
+    <color name="light_purple">#FFE8DEF8</color>
+    <color name="deep_purple">#FF7B5DB8</color>
+    <color name="accent_purple">#FF9C7CF2</color>
+    <color name="warning_orange">#FFFF9800</color>
+    <color name="error_red">#FFE53935</color>
+    <color name="success_green">#FF4CAF50</color>
+    <color name="light_background">#FFF8F9FA</color>
+    
+    <!-- Basic Colors -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
