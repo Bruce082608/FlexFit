@@ -1,5 +1,12 @@
 package com.example.flexfit.ui.screens.profile
 
+import android.content.Context
+import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
@@ -27,6 +35,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -35,10 +44,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -47,9 +60,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.flexfit.data.model.UserProfile
+import com.example.flexfit.data.repository.UserProfileRepository
 import com.example.flexfit.data.repository.WorkoutRecordRepository
 import com.example.flexfit.ui.theme.AccentPurple
 import com.example.flexfit.ui.theme.DeepPurple
@@ -61,15 +82,37 @@ import com.example.flexfit.ui.theme.TextPrimary
 import com.example.flexfit.ui.theme.TextSecondary
 import com.example.flexfit.ui.theme.TextTertiary
 import com.example.flexfit.ui.theme.WarningOrange
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ProfileScreen() {
-    var height by remember { mutableStateOf("170") }
-    var weight by remember { mutableStateOf("70") }
-    var fitnessGoal by remember { mutableStateOf("Build Strength") }
+    val profile by UserProfileRepository.profile.collectAsState()
     val totalWorkouts by WorkoutRecordRepository.totalWorkouts.collectAsState()
     val averageAccuracy by WorkoutRecordRepository.averageAccuracy.collectAsState()
     val currentStreak by WorkoutRecordRepository.currentStreak.collectAsState()
+    val context = LocalContext.current
+
+    var showBodyStatsDialog by remember { mutableStateOf(false) }
+    var showEditProfileDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
+    var infoDialog by remember { mutableStateOf<InfoDialogState?>(null) }
+    var pendingAvatarSetter by remember { mutableStateOf<((String) -> Unit)?>(null) }
+
+    val avatarPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            pendingAvatarSetter?.invoke(uri.toString())
+            pendingAvatarSetter = null
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -77,50 +120,114 @@ fun ProfileScreen() {
             .background(LightBackground)
             .verticalScroll(rememberScrollState())
     ) {
-        // Profile Header with Gradient
         ProfileHeader(
+            profile = profile,
             totalWorkouts = totalWorkouts,
             currentStreak = currentStreak,
-            averageAccuracy = averageAccuracy
+            averageAccuracy = averageAccuracy,
+            onEditProfile = { showEditProfileDialog = true }
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Body Stats Section
         BodyStatsSection(
-            height = height,
-            weight = weight,
-            onHeightChange = { height = it },
-            onWeightChange = { weight = it }
+            height = profile.height,
+            weight = profile.weight,
+            onEdit = { showBodyStatsDialog = true }
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Fitness Goal Section
         FitnessGoalSection(
-            currentGoal = fitnessGoal,
-            onGoalChange = { fitnessGoal = it }
+            currentGoal = profile.fitnessGoal,
+            onGoalChange = UserProfileRepository::updateFitnessGoal
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Settings Section
-        SettingsSection()
+        SettingsSection(
+            onEditProfile = { showEditProfileDialog = true },
+            onNotifications = {
+                infoDialog = InfoDialogState(
+                    title = "Notifications",
+                    message = "Workout reminders are ready for the demo profile. Full scheduling can be connected later from Android system notification settings."
+                )
+            },
+            onDeviceSettings = {
+                infoDialog = InfoDialogState(
+                    title = "Device Settings",
+                    message = "FlexFit uses the phone camera, local video picker, on-device pose detection, and optional post-workout network access for AI Analysis."
+                )
+            },
+            onFeedback = {
+                infoDialog = InfoDialogState(
+                    title = "Feedback",
+                    message = "Send demo feedback to the FlexFit team with the exercise name, device model, and what happened during the session."
+                )
+            }
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // About Section
-        AboutSection()
+        AboutSection(
+            onAboutFlexFit = { showAboutDialog = true },
+            onRateApp = {
+                infoDialog = InfoDialogState(
+                    title = "Rate App",
+                    message = "Thanks for trying FlexFit. Store rating is not connected in the demo build yet, but this button is wired and ready for the release flow."
+                )
+            }
+        )
 
         Spacer(modifier = Modifier.height(32.dp))
+    }
+
+    if (showBodyStatsDialog) {
+        BodyStatsDialog(
+            profile = profile,
+            onDismiss = { showBodyStatsDialog = false },
+            onSave = { height, weight ->
+                UserProfileRepository.updateBodyStats(height, weight)
+                showBodyStatsDialog = false
+            }
+        )
+    }
+
+    if (showEditProfileDialog) {
+        EditProfileDialog(
+            profile = profile,
+            onDismiss = { showEditProfileDialog = false },
+            onChooseAvatar = { setter ->
+                pendingAvatarSetter = setter
+                avatarPickerLauncher.launch(arrayOf("image/*"))
+            },
+            onSave = { name, email, avatarStyle, avatarUri ->
+                UserProfileRepository.updateProfile(name, email, avatarStyle, avatarUri)
+                showEditProfileDialog = false
+            }
+        )
+    }
+
+    if (showAboutDialog) {
+        AboutFlexFitDialog(onDismiss = { showAboutDialog = false })
+    }
+
+    infoDialog?.let { dialog ->
+        SimpleInfoDialog(
+            title = dialog.title,
+            message = dialog.message,
+            onDismiss = { infoDialog = null }
+        )
     }
 }
 
 @Composable
 private fun ProfileHeader(
+    profile: UserProfile,
     totalWorkouts: Int,
     currentStreak: Int,
-    averageAccuracy: Float
+    averageAccuracy: Float,
+    onEditProfile: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -132,30 +239,32 @@ private fun ProfileHeader(
             )
             .padding(24.dp)
     ) {
+        IconButton(
+            onClick = onEditProfile,
+            modifier = Modifier.align(Alignment.TopEnd)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = "Edit profile",
+                tint = Color.White
+            )
+        }
+
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Avatar
-            Box(
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(60.dp),
-                    tint = Color.White
-                )
-            }
+            AvatarCircle(
+                name = profile.name,
+                avatarStyle = profile.avatarStyle,
+                avatarUri = profile.avatarUri,
+                size = 100
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "FlexFit User",
+                text = profile.name,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -164,14 +273,13 @@ private fun ProfileHeader(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "user@flexfit.com",
+                text = profile.email,
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.8f)
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Stats Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -185,10 +293,49 @@ private fun ProfileHeader(
 }
 
 @Composable
-private fun ProfileStat(value: String, label: String) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun AvatarCircle(
+    name: String,
+    avatarStyle: Int,
+    avatarUri: String?,
+    size: Int
+) {
+    val palette = avatarPalette(avatarStyle)
+    val imageBitmap = rememberAvatarBitmap(avatarUri)
+    val initials = name.trim()
+        .split(" ")
+        .filter { it.isNotBlank() }
+        .take(2)
+        .joinToString("") { it.first().uppercase() }
+        .ifBlank { "F" }
+
+    Box(
+        modifier = Modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(palette)),
+        contentAlignment = Alignment.Center
     ) {
+        if (imageBitmap != null) {
+            Image(
+                bitmap = imageBitmap,
+                contentDescription = "Profile avatar",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Text(
+                text = initials,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileStat(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
             style = MaterialTheme.typography.titleLarge,
@@ -205,10 +352,9 @@ private fun ProfileStat(value: String, label: String) {
 
 @Composable
 private fun BodyStatsSection(
-    height: String,
-    weight: String,
-    onHeightChange: (String) -> Unit,
-    onWeightChange: (String) -> Unit
+    height: Float,
+    weight: Float,
+    onEdit: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -218,9 +364,7 @@ private fun BodyStatsSection(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -234,12 +378,12 @@ private fun BodyStatsSection(
                 )
 
                 IconButton(
-                    onClick = { /* TODO: Edit body stats */ },
+                    onClick = onEdit,
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit",
+                        contentDescription = "Edit body stats",
                         tint = DeepPurple,
                         modifier = Modifier.size(20.dp)
                     )
@@ -249,18 +393,20 @@ private fun BodyStatsSection(
             Spacer(modifier = Modifier.height(16.dp))
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onEdit() },
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 StatInputCard(
                     label = "Height",
-                    value = height,
+                    value = height.formatNumber(),
                     unit = "cm",
                     modifier = Modifier.weight(1f)
                 )
                 StatInputCard(
                     label = "Weight",
-                    value = weight,
+                    value = weight.formatNumber(),
                     unit = "kg",
                     modifier = Modifier.weight(1f)
                 )
@@ -291,9 +437,7 @@ private fun StatInputCard(
                 color = TextSecondary
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                verticalAlignment = Alignment.Bottom
-            ) {
+            Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = value,
                     style = MaterialTheme.typography.headlineSmall,
@@ -325,9 +469,7 @@ private fun FitnessGoalSection(
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = "Fitness Goal",
                 style = MaterialTheme.typography.titleMedium,
@@ -359,24 +501,17 @@ private fun GoalOption(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (isSelected) DeepPurple.copy(alpha = 0.1f) else Color.Transparent
-            )
+            .background(if (isSelected) DeepPurple.copy(alpha = 0.1f) else Color.Transparent)
             .clickable { onClick() }
             .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(
-                        if (isSelected) DeepPurple else LightPurple,
-                        CircleShape
-                    ),
+                    .background(if (isSelected) DeepPurple else LightPurple, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -413,7 +548,12 @@ private fun GoalOption(
 }
 
 @Composable
-private fun SettingsSection() {
+private fun SettingsSection(
+    onEditProfile: () -> Unit,
+    onNotifications: () -> Unit,
+    onDeviceSettings: () -> Unit,
+    onFeedback: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -422,9 +562,7 @@ private fun SettingsSection() {
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = "Settings",
                 style = MaterialTheme.typography.titleMedium,
@@ -437,22 +575,22 @@ private fun SettingsSection() {
             SettingsItem(
                 icon = Icons.Default.Edit,
                 title = "Edit Profile",
-                onClick = { /* TODO */ }
+                onClick = onEditProfile
             )
             SettingsItem(
                 icon = Icons.Default.Notifications,
                 title = "Notifications",
-                onClick = { /* TODO */ }
+                onClick = onNotifications
             )
             SettingsItem(
                 icon = Icons.Default.Settings,
                 title = "Device Settings",
-                onClick = { /* TODO */ }
+                onClick = onDeviceSettings
             )
             SettingsItem(
                 icon = Icons.Default.Mail,
                 title = "Feedback",
-                onClick = { /* TODO */ }
+                onClick = onFeedback
             )
         }
     }
@@ -473,9 +611,7 @@ private fun SettingsItem(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
@@ -499,7 +635,10 @@ private fun SettingsItem(
 }
 
 @Composable
-private fun AboutSection() {
+private fun AboutSection(
+    onAboutFlexFit: () -> Unit,
+    onRateApp: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -508,9 +647,7 @@ private fun AboutSection() {
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = "About",
                 style = MaterialTheme.typography.titleMedium,
@@ -523,13 +660,338 @@ private fun AboutSection() {
             SettingsItem(
                 icon = Icons.Default.Info,
                 title = "About FlexFit",
-                onClick = { /* TODO */ }
+                onClick = onAboutFlexFit
             )
             SettingsItem(
                 icon = Icons.Default.Star,
                 title = "Rate App",
-                onClick = { /* TODO */ }
+                onClick = onRateApp
             )
         }
+    }
+}
+
+@Composable
+private fun BodyStatsDialog(
+    profile: UserProfile,
+    onDismiss: () -> Unit,
+    onSave: (Float, Float) -> Unit
+) {
+    var heightText by remember(profile.height) { mutableStateOf(profile.height.formatNumber()) }
+    var weightText by remember(profile.weight) { mutableStateOf(profile.weight.formatNumber()) }
+
+    val height = heightText.toFloatOrNull()
+    val weight = weightText.toFloatOrNull()
+    val heightValid = height != null && height in 80f..250f
+    val weightValid = weight != null && weight in 25f..250f
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Body Stats") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = heightText,
+                    onValueChange = { heightText = it.filterDecimalInput() },
+                    label = { Text("Height") },
+                    suffix = { Text("cm") },
+                    singleLine = true,
+                    isError = heightText.isNotBlank() && !heightValid,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = weightText,
+                    onValueChange = { weightText = it.filterDecimalInput() },
+                    label = { Text("Weight") },
+                    suffix = { Text("kg") },
+                    singleLine = true,
+                    isError = weightText.isNotBlank() && !weightValid,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (!heightValid || !weightValid) {
+                    Text(
+                        text = "Enter height from 80-250 cm and weight from 25-250 kg.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ErrorRed
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(height ?: profile.height, weight ?: profile.weight) },
+                enabled = heightValid && weightValid,
+                colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun EditProfileDialog(
+    profile: UserProfile,
+    onDismiss: () -> Unit,
+    onChooseAvatar: (((String) -> Unit) -> Unit),
+    onSave: (String, String, Int, String?) -> Unit
+) {
+    var nameText by remember(profile.name) { mutableStateOf(profile.name) }
+    var emailText by remember(profile.email) { mutableStateOf(profile.email) }
+    var avatarStyle by remember(profile.avatarStyle) { mutableIntStateOf(profile.avatarStyle) }
+    var avatarUri by remember(profile.avatarUri) { mutableStateOf(profile.avatarUri) }
+
+    val nameValid = nameText.trim().length in 2..32
+    val emailValid = emailText.trim().let { "@" in it && "." in it && it.length <= 80 }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Profile") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    AvatarCircle(
+                        name = nameText,
+                        avatarStyle = avatarStyle,
+                        avatarUri = avatarUri,
+                        size = 72
+                    )
+                }
+
+                OutlinedTextField(
+                    value = nameText,
+                    onValueChange = { nameText = it.take(32) },
+                    label = { Text("Nickname") },
+                    singleLine = true,
+                    isError = nameText.isNotBlank() && !nameValid,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = emailText,
+                    onValueChange = { emailText = it.take(80) },
+                    label = { Text("Email") },
+                    singleLine = true,
+                    isError = emailText.isNotBlank() && !emailValid,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    text = "Avatar",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { onChooseAvatar { selectedUri -> avatarUri = selectedUri } },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
+                    ) {
+                        Text("Choose Photo")
+                    }
+                    OutlinedButton(
+                        onClick = { avatarUri = null },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Remove")
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    repeat(UserProfileRepository.AVATAR_STYLE_COUNT) { index ->
+                        AvatarChoice(
+                            index = index,
+                            selected = avatarStyle == index,
+                            onClick = { avatarStyle = index },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                if (!nameValid || !emailValid) {
+                    Text(
+                        text = "Use a nickname with 2-32 characters and a valid email address.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ErrorRed
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(nameText, emailText, avatarStyle, avatarUri) },
+                enabled = nameValid && emailValid,
+                colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun AvatarChoice(
+    index: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(Brush.linearGradient(avatarPalette(index)))
+        )
+        if (selected) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("On", color = DeepPurple)
+        }
+    }
+}
+
+@Composable
+private fun AboutFlexFitDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.FitnessCenter,
+                contentDescription = null,
+                tint = DeepPurple
+            )
+        },
+        title = { Text("About FlexFit") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "FlexFit is an AI fitness coaching demo that uses your phone camera or local workout videos to analyze Pull Up and Shoulder Press form.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary
+                )
+                Text(
+                    text = "Real-time feedback is powered by on-device pose detection and local rule-based scoring for Depth, Alignment, and Stability.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary
+                )
+                Text(
+                    text = "After a workout, FlexFit can optionally use DeepSeek-compatible AI Analysis for personalized coaching. The local demo path still works without network access.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
+            ) {
+                Text("Done")
+            }
+        }
+    )
+}
+
+@Composable
+private fun SimpleInfoDialog(
+    title: String,
+    message: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextPrimary,
+                textAlign = TextAlign.Start
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK")
+            }
+        }
+    )
+}
+
+private data class InfoDialogState(
+    val title: String,
+    val message: String
+)
+
+private fun Float.formatNumber(): String {
+    return if (this % 1f == 0f) {
+        toInt().toString()
+    } else {
+        String.format("%.1f", this)
+    }
+}
+
+private fun String.filterDecimalInput(): String {
+    val filtered = filter { it.isDigit() || it == '.' }
+    val firstDot = filtered.indexOf('.')
+    return if (firstDot == -1) {
+        filtered.take(5)
+    } else {
+        filtered.take(firstDot + 1) + filtered.drop(firstDot + 1).replace(".", "").take(1)
+    }
+}
+
+private fun avatarPalette(index: Int): List<Color> {
+    return when (index) {
+        1 -> listOf(SuccessGreen, Color(0xFF2E7D32))
+        2 -> listOf(WarningOrange, Color(0xFFF57C00))
+        3 -> listOf(Color(0xFF1565C0), Color(0xFF26A69A))
+        else -> listOf(DeepPurple, AccentPurple)
+    }
+}
+
+@Composable
+private fun rememberAvatarBitmap(avatarUri: String?): ImageBitmap? {
+    val context = LocalContext.current
+    var bitmap by remember(avatarUri) { mutableStateOf<ImageBitmap?>(null) }
+
+    LaunchedEffect(avatarUri) {
+        bitmap = avatarUri?.let { loadAvatarBitmap(context, it) }
+    }
+
+    return bitmap
+}
+
+private suspend fun loadAvatarBitmap(context: Context, avatarUri: String): ImageBitmap? {
+    return withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.openInputStream(Uri.parse(avatarUri))?.use { input ->
+                BitmapFactory.decodeStream(input)?.asImageBitmap()
+            }
+        }.getOrNull()
     }
 }

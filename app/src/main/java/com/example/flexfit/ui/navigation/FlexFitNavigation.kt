@@ -69,12 +69,21 @@ fun FlexFitNavigation() {
                             label = { Text(screen.title) },
                             selected = selected,
                             onClick = {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                                if (screen.route == Screen.Home.route && currentDestination?.route != Screen.Home.route) {
+                                    val returnedHome = navController.popBackStack(Screen.Home.route, false)
+                                    if (!returnedHome) {
+                                        navController.navigate(Screen.Home.route) {
+                                            launchSingleTop = true
+                                        }
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
+                                } else {
+                                    navController.navigate(screen.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
                             },
                             colors = NavigationBarItemDefaults.colors(

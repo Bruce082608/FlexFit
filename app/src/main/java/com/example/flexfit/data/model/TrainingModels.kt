@@ -89,10 +89,13 @@ data class TrainingSession(
  * User profile data.
  */
 data class UserProfile(
-    val name: String = "User",
+    val name: String = "FlexFit User",
+    val email: String = "user@flexfit.com",
+    val avatarStyle: Int = 0,
+    val avatarUri: String? = null,
     val height: Float = 170f,  // cm
     val weight: Float = 70f,   // kg
-    val fitnessGoal: String = "General Fitness",
+    val fitnessGoal: String = "Build Strength",
     val streakDays: Int = 0,
     val totalWorkouts: Int = 0,
     val totalMinutes: Long = 0
