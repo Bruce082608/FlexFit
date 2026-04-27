@@ -1,6 +1,10 @@
 package com.example.flexfit.data.repository
 
+import com.example.flexfit.data.model.AnalysisSource
+import com.example.flexfit.data.model.LlmAnalysisData
+import com.example.flexfit.data.model.WorkoutAnalysisResult
 import com.example.flexfit.data.model.WorkoutRecord
+import com.example.flexfit.data.model.WorkoutResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,7 +27,8 @@ class WorkoutRecordRepositoryTest {
             alignmentScore = 82f,
             stabilityScore = 73f,
             mainIssues = listOf("Body swinging detected"),
-            improvementSuggestions = listOf("Brace your core before pulling.")
+            improvementSuggestions = listOf("Brace your core before pulling."),
+            llmAnalysis = llmAnalysis()
         )
 
         val decoded = WorkoutRecordRepository.decodeRecordsJson(
@@ -37,6 +42,8 @@ class WorkoutRecordRepositoryTest {
         assertEquals(record.stabilityScore, decoded.first().stabilityScore, 0.001f)
         assertEquals(record.mainIssues, decoded.first().mainIssues)
         assertEquals(record.improvementSuggestions, decoded.first().improvementSuggestions)
+        assertEquals(record.llmAnalysis?.summary, decoded.first().llmAnalysis?.summary)
+        assertEquals(record.llmAnalysis?.recommendations, decoded.first().llmAnalysis?.recommendations)
     }
 
     @Test
@@ -99,6 +106,29 @@ class WorkoutRecordRepositoryTest {
         assertEquals(record.improvementSuggestions, result.improvementSuggestions)
     }
 
+    @Test
+    fun updateWorkoutWithLlmAnalysis_updatesSavedRecord() {
+        WorkoutRecordRepository.clearAllRecords()
+        val result = WorkoutResult(
+            id = "saved-record",
+            exerciseType = "Normal Grip Pull-up",
+            durationSeconds = 90,
+            totalReps = 3,
+            completedReps = 2,
+            averageAccuracy = 72f,
+            caloriesBurned = 12f
+        )
+
+        WorkoutRecordRepository.addWorkoutResult(result)
+        WorkoutRecordRepository.updateWorkoutWithLlmAnalysis(
+            workoutId = result.id,
+            llmAnalysis = llmAnalysis(summary = "Updated AI analysis")
+        )
+
+        val updated = WorkoutRecordRepository.getWorkoutById(result.id)
+        assertEquals("Updated AI analysis", updated?.llmAnalysis?.summary)
+    }
+
     private fun workoutRecord(
         id: String = "record",
         exerciseType: String = "Normal Grip Pull-up",
@@ -114,7 +144,8 @@ class WorkoutRecordRepositoryTest {
         errorsCount: Int = 0,
         warningsCount: Int = 0,
         mainIssues: List<String> = emptyList(),
-        improvementSuggestions: List<String> = emptyList()
+        improvementSuggestions: List<String> = emptyList(),
+        llmAnalysis: LlmAnalysisData? = null
     ): WorkoutRecord {
         return WorkoutRecord(
             id = id,
@@ -131,7 +162,20 @@ class WorkoutRecordRepositoryTest {
             errorsCount = errorsCount,
             warningsCount = warningsCount,
             mainIssues = mainIssues,
-            improvementSuggestions = improvementSuggestions
+            improvementSuggestions = improvementSuggestions,
+            llmAnalysis = llmAnalysis
+        )
+    }
+
+    private fun llmAnalysis(summary: String = "Personalized AI analysis"): LlmAnalysisData {
+        return LlmAnalysisData.fromWorkoutAnalysisResult(
+            WorkoutAnalysisResult(
+                summary = summary,
+                strengths = listOf("Stable tempo"),
+                weaknesses = listOf("Limited range"),
+                recommendations = listOf("Use full range of motion"),
+                source = AnalysisSource.LLM
+            )
         )
     }
 

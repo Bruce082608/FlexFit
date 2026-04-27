@@ -16,13 +16,13 @@ Install Android Studio and an Android SDK that includes API 36.
 Then use either `local.properties`:
 
 ```properties
-sdk.dir=/Users/<your-user>/Library/Android/sdk
+sdk.dir=/path/to/Android/sdk
 ```
 
 or `ANDROID_HOME`:
 
 ```bash
-export ANDROID_HOME=/Users/<your-user>/Library/Android/sdk
+export ANDROID_HOME=/path/to/Android/sdk
 ```
 
 Do not commit `local.properties`. It is intentionally ignored because it contains local machine configuration.
@@ -34,6 +34,13 @@ Run these before handing off changes:
 ```bash
 ./gradlew test
 ./gradlew assembleDebug
+```
+
+On Windows:
+
+```powershell
+.\gradlew.bat test
+.\gradlew.bat assembleDebug
 ```
 
 Expected results:

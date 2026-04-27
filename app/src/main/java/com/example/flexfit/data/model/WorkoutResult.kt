@@ -58,6 +58,34 @@ enum class PerformanceLevel(val displayName: String, val emoji: String) {
 }
 
 /**
+ * Represents the LLM analysis data stored with a workout record.
+ * This is persisted separately from the WorkoutResult to allow for delayed analysis.
+ */
+data class LlmAnalysisData(
+    val summary: String,
+    val strengths: List<String>,
+    val weaknesses: List<String>,
+    val recommendations: List<String>,
+    val analysisSource: String,  // "llm" or "local_fallback"
+    val generatedAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        fun fromWorkoutAnalysisResult(result: WorkoutAnalysisResult): LlmAnalysisData {
+            return LlmAnalysisData(
+                summary = result.summary,
+                strengths = result.strengths,
+                weaknesses = result.weaknesses,
+                recommendations = result.recommendations,
+                analysisSource = when (result.source) {
+                    AnalysisSource.LLM -> "llm"
+                    AnalysisSource.LOCAL_FALLBACK -> "local_fallback"
+                }
+            )
+        }
+    }
+}
+
+/**
  * Represents a workout record stored for history tracking.
  */
 data class WorkoutRecord(
@@ -75,7 +103,8 @@ data class WorkoutRecord(
     val errorsCount: Int,
     val warningsCount: Int,
     val mainIssues: List<String> = emptyList(),
-    val improvementSuggestions: List<String> = emptyList()
+    val improvementSuggestions: List<String> = emptyList(),
+    val llmAnalysis: LlmAnalysisData? = null
 ) {
     fun toWorkoutResult(): WorkoutResult = WorkoutResult(
         id = id,

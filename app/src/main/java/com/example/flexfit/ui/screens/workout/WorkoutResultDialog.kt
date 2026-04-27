@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -23,7 +24,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.flexfit.data.llm.LlmAnalysisState
+import com.example.flexfit.data.model.AnalysisSource
 import com.example.flexfit.data.model.PerformanceLevel
+import com.example.flexfit.data.model.WorkoutAnalysisResult
 import com.example.flexfit.data.model.WorkoutResult
 import com.example.flexfit.ui.theme.*
 import kotlin.math.roundToInt
@@ -31,8 +35,11 @@ import kotlin.math.roundToInt
 @Composable
 fun WorkoutResultDialog(
     result: WorkoutResult,
+    llmAnalysisState: LlmAnalysisState = LlmAnalysisState.Idle,
     onDismiss: () -> Unit,
-    onSaveAndClose: () -> Unit
+    onSaveAndClose: () -> Unit,
+    onRequestLlmAnalysis: () -> Unit = {},
+    onRetryLlmAnalysis: () -> Unit = {}
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -83,7 +90,7 @@ fun WorkoutResultDialog(
                                     PerformanceLevel.EXCELLENT -> Icons.Default.EmojiEvents
                                     PerformanceLevel.GOOD -> Icons.Default.ThumbUp
                                     PerformanceLevel.AVERAGE -> Icons.Default.FitnessCenter
-                                    PerformanceLevel.NEEDS_IMPROVEMENT -> Icons.Default.TrendingUp
+                                    PerformanceLevel.NEEDS_IMPROVEMENT -> Icons.AutoMirrored.Filled.TrendingUp
                                 },
                                 contentDescription = null,
                                 tint = Color.White,
@@ -158,7 +165,6 @@ fun WorkoutResultDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Accuracy progress bar
                 AccuracyProgressBar(accuracy = result.averageAccuracy)
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -223,6 +229,14 @@ fun WorkoutResultDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                AiAnalysisCard(
+                    analysisState = llmAnalysisState,
+                    onRequestAnalysis = onRequestLlmAnalysis,
+                    onRetry = onRetryLlmAnalysis
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
                 // Action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -269,17 +283,37 @@ private fun ScoreBreakdownCard(result: WorkoutResult) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Score Breakdown",
+                text = "Local Scores",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
 
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Real-time rule-based scores calculated from pose metrics during training.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
+
             Spacer(modifier = Modifier.height(12.dp))
 
-            ScoreRow(label = "Depth", value = result.depthScore)
-            ScoreRow(label = "Alignment", value = result.alignmentScore)
-            ScoreRow(label = "Stability", value = result.stabilityScore)
+            ScoreRow(
+                label = "Depth",
+                value = result.depthScore,
+                description = "Range of motion and full rep completion."
+            )
+            ScoreRow(
+                label = "Alignment",
+                value = result.alignmentScore,
+                description = "Left-right symmetry and joint positioning."
+            )
+            ScoreRow(
+                label = "Stability",
+                value = result.stabilityScore,
+                description = "Body control, shoulder level, and torso steadiness."
+            )
         }
     }
 }
@@ -287,7 +321,8 @@ private fun ScoreBreakdownCard(result: WorkoutResult) {
 @Composable
 private fun ScoreRow(
     label: String,
-    value: Float
+    value: Float,
+    description: String
 ) {
     Column(modifier = Modifier.padding(vertical = 6.dp)) {
         Row(
@@ -319,6 +354,14 @@ private fun ScoreRow(
             color = scoreColor(value),
             trackColor = Color.LightGray.copy(alpha = 0.3f)
         )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary
+        )
     }
 }
 
@@ -331,31 +374,38 @@ private fun IssueSummaryCard(result: WorkoutResult) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Main Issues",
+                text = "Rule-Based Issues",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            result.mainIssues.forEach { issue ->
-                SummaryLine(text = issue, color = if (issue == "No major issues detected") SuccessGreen else ErrorRed)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Suggestions",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                text = "Detected from local pose rules before AI analysis.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            result.improvementSuggestions.forEach { suggestion ->
-                SummaryLine(text = suggestion, color = AccentPurple)
+            val hasIssues = result.mainIssues.any { it != "No major issues detected" }
+            if (!hasIssues) {
+                SummaryLine(
+                    title = "No major issues detected",
+                    detail = "Keep the same tempo and full range of motion.",
+                    color = SuccessGreen
+                )
+            } else {
+                result.mainIssues.forEachIndexed { index, issue ->
+                    SummaryLine(
+                        title = issue,
+                        detail = result.improvementSuggestions.getOrNull(index)
+                            ?: "Review this part of your form on the next set.",
+                        color = ErrorRed
+                    )
+                }
             }
         }
     }
@@ -363,7 +413,8 @@ private fun IssueSummaryCard(result: WorkoutResult) {
 
 @Composable
 private fun SummaryLine(
-    text: String,
+    title: String,
+    detail: String,
     color: Color
 ) {
     Row(
@@ -379,11 +430,20 @@ private fun SummaryLine(
                 .background(color, CircleShape)
         )
         Spacer(modifier = Modifier.width(10.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
-        )
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
+        }
     }
 }
 
@@ -448,7 +508,7 @@ private fun AccuracyProgressBar(accuracy: Float) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Overall Accuracy",
+                text = "Overall Local Score",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary
             )
@@ -520,6 +580,283 @@ private fun DetailRow(
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
             color = valueColor
+        )
+    }
+}
+
+@Composable
+private fun AiAnalysisCard(
+    analysisState: LlmAnalysisState,
+    onRequestAnalysis: () -> Unit,
+    onRetry: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = LightBackground)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Psychology,
+                        contentDescription = null,
+                        tint = AccentPurple,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "AI Analysis",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                }
+
+                when (analysisState) {
+                    is LlmAnalysisState.Idle -> {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = AccentPurple,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    is LlmAnalysisState.Loading -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = AccentPurple
+                        )
+                    }
+                    is LlmAnalysisState.Success -> {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = SuccessGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    is LlmAnalysisState.Error -> {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = WarningOrange,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Post-workout personalized coaching generated after the local scores are ready.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (val state = analysisState) {
+                is LlmAnalysisState.Idle -> {
+                    Text(
+                        text = "Get personalized insights and recommendations powered by AI.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = onRequestAnalysis,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Analyze with AI")
+                    }
+                }
+
+                is LlmAnalysisState.Loading -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = AccentPurple
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Analyzing your workout...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                is LlmAnalysisState.Success -> {
+                    AnalysisResultContent(result = state.result)
+                }
+
+                is LlmAnalysisState.Error -> {
+                    if (state.fallbackResult != null) {
+                        Text(
+                            text = state.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        AnalysisResultContent(result = state.fallbackResult)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = onRetry,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Retry AI Analysis")
+                        }
+                    } else {
+                        Text(
+                            text = state.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ErrorRed
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = onRetry,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Retry")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalysisResultContent(result: WorkoutAnalysisResult) {
+    val sourceLabel = when (result.source) {
+        AnalysisSource.LLM -> "AI-powered"
+        AnalysisSource.LOCAL_FALLBACK -> "Local analysis"
+    }
+    val sourceColor = when (result.source) {
+        AnalysisSource.LLM -> AccentPurple
+        AnalysisSource.LOCAL_FALLBACK -> TextSecondary
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End
+    ) {
+        Text(
+            text = sourceLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = sourceColor
+        )
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    Text(
+        text = result.summary,
+        style = MaterialTheme.typography.bodyMedium,
+        color = TextPrimary,
+        fontWeight = FontWeight.Medium
+    )
+
+    if (result.strengths.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "Strengths",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = SuccessGreen
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        result.strengths.forEach { strength ->
+            AnalysisBulletPoint(text = strength, color = SuccessGreen)
+        }
+    }
+
+    if (result.weaknesses.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "Areas for Improvement",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = WarningOrange
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        result.weaknesses.forEach { weakness ->
+            AnalysisBulletPoint(text = weakness, color = WarningOrange)
+        }
+    }
+
+    if (result.recommendations.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "Recommendations",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = AccentPurple
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        result.recommendations.forEach { recommendation ->
+            AnalysisBulletPoint(text = recommendation, color = AccentPurple)
+        }
+    }
+}
+
+@Composable
+private fun AnalysisBulletPoint(
+    text: String,
+    color: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 7.dp)
+                .size(6.dp)
+                .background(color, CircleShape)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary
         )
     }
 }

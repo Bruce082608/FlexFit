@@ -37,17 +37,17 @@ class VoiceGuideManager(private val context: Context) {
     fun playVoice(voiceType: VoiceType) {
         scope.launch {
             try {
-                // Stop any currently playing audio
                 stopCurrent()
 
                 val resourceId = getResourceId(voiceType)
-                if (resourceId != 0) {
+                if (resourceId != 0 && isResourceAvailable(resourceId)) {
                     mediaPlayer = MediaPlayer.create(context, resourceId)
                     mediaPlayer?.setOnCompletionListener { mp ->
                         mp.release()
                     }
                     mediaPlayer?.start()
                 }
+                // Silently skip if resource is missing — no crash
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -105,13 +105,23 @@ class VoiceGuideManager(private val context: Context) {
     }
 
     private fun getResourceId(voiceType: VoiceType): Int {
-        return when (voiceType) {
-            VoiceType.START -> R.raw.start
-            VoiceType.SUCCESS -> R.raw.success
-            VoiceType.FAIL -> R.raw.fail
-            VoiceType.SWINGING -> R.raw.swinging
-            VoiceType.SHRUGGING -> R.raw.shrugging
-            VoiceType.NOT_HIGH -> R.raw.not_high
+        val name = when (voiceType) {
+            VoiceType.START -> "start"
+            VoiceType.SUCCESS -> "success"
+            VoiceType.FAIL -> "fail"
+            VoiceType.SWINGING -> "swinging"
+            VoiceType.SHRUGGING -> "shrugging"
+            VoiceType.NOT_HIGH -> "not_high"
+        }
+        return context.resources.getIdentifier(name, "raw", context.packageName)
+    }
+
+    private fun isResourceAvailable(resourceId: Int): Boolean {
+        return try {
+            context.resources.openRawResourceFd(resourceId).close()
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

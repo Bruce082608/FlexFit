@@ -141,4 +141,48 @@ class PoseDetectorWrapper {
         poseDetector = null
         isInitialized = false
     }
+
+    /**
+     * Process a Bitmap from a video frame.
+     * The caller is responsible for recycling the bitmap after calling this.
+     */
+    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+    fun processBitmap(
+        bitmap: android.graphics.Bitmap,
+        callback: PoseDetectorCallback
+    ) {
+        if (!isInitialized || poseDetector == null) {
+            callback.onError("PoseDetector not initialized")
+            return
+        }
+
+        try {
+            // ML Kit can process Bitmap directly on Android API 19+
+            val inputImage = InputImage.fromBitmap(bitmap, 0)
+
+            poseDetector!!.process(inputImage)
+                .addOnSuccessListener { pose ->
+                    if (pose.allPoseLandmarks.isNotEmpty()) {
+                        val poseFrame = convertPoseToKeypoints(
+                            pose = pose,
+                            imageWidth = bitmap.width,
+                            imageHeight = bitmap.height
+                        )
+                        val confidence = calculateAverageConfidence(pose)
+                        callback.onPoseDetected(
+                            keypoints = poseFrame.keypoints,
+                            landmarkConfidences = poseFrame.landmarkConfidences,
+                            confidence = confidence
+                        )
+                    } else {
+                        callback.onPoseNotDetected()
+                    }
+                }
+                .addOnFailureListener { e ->
+                    callback.onError(e.message ?: "Unknown error")
+                }
+        } catch (e: Exception) {
+            callback.onError(e.message ?: "Unknown error")
+        }
+    }
 }

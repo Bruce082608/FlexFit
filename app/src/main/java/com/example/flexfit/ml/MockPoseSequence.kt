@@ -29,20 +29,40 @@ object MockPoseSequence {
     }
 
     fun shoulderPressFrame(frameCount: Long): FloatArray {
-        val keypoints = PoseKeypoints.empty()
-        val cyclePhase = (frameCount % 180) / 180f * 2 * Math.PI
-        val pressLift = (kotlin.math.sin(cyclePhase).toFloat() + 1f) * 0.35f
+        val phase = (frameCount % 160).toInt()
+        val progress = when {
+            phase < 30 -> 0f
+            phase < 70 -> (phase - 30) / 40f
+            phase < 100 -> 1f
+            phase < 140 -> 1f - (phase - 100) / 40f
+            else -> 0f
+        }.coerceIn(0f, 1f)
 
-        PoseKeypoints.set(keypoints, 0, 0f, 0.75f)
-        PoseKeypoints.set(keypoints, 11, -0.18f, 0.35f)
-        PoseKeypoints.set(keypoints, 12, 0.18f, 0.35f)
-        PoseKeypoints.set(keypoints, 13, -0.28f, 0.45f + pressLift * 0.4f)
-        PoseKeypoints.set(keypoints, 14, 0.28f, 0.45f + pressLift * 0.4f)
-        PoseKeypoints.set(keypoints, 15, -0.24f, 0.42f + pressLift)
-        PoseKeypoints.set(keypoints, 16, 0.24f, 0.42f + pressLift)
-        PoseKeypoints.set(keypoints, 23, -0.12f, -0.10f)
-        PoseKeypoints.set(keypoints, 24, 0.12f, -0.10f)
+        return shoulderPressPose(progress)
+    }
+
+    private fun shoulderPressPose(progress: Float): FloatArray {
+        val keypoints = PoseKeypoints.empty()
+        val shoulderY = 0.28f
+        val elbowY = lerp(0.22f, 0.62f, progress)
+        val wristY = lerp(0.43f, 0.96f, progress)
+        val elbowX = lerp(0.36f, 0.22f, progress)
+        val wristX = lerp(0.28f, 0.24f, progress)
+
+        PoseKeypoints.set(keypoints, 0, 0f, 0.78f)
+        PoseKeypoints.set(keypoints, 11, -0.18f, shoulderY)
+        PoseKeypoints.set(keypoints, 12, 0.18f, shoulderY)
+        PoseKeypoints.set(keypoints, 13, -elbowX, elbowY)
+        PoseKeypoints.set(keypoints, 14, elbowX, elbowY)
+        PoseKeypoints.set(keypoints, 15, -wristX, wristY)
+        PoseKeypoints.set(keypoints, 16, wristX, wristY)
+        PoseKeypoints.set(keypoints, 23, -0.13f, -0.16f)
+        PoseKeypoints.set(keypoints, 24, 0.13f, -0.16f)
 
         return keypoints
+    }
+
+    private fun lerp(start: Float, end: Float, progress: Float): Float {
+        return start + (end - start) * progress
     }
 }

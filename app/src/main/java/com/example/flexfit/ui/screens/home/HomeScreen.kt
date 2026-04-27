@@ -71,7 +71,7 @@ fun HomeScreen(navController: NavController) {
 
         // Today's Training Card
         TodayTrainingCard(
-            onStartWorkout = { navController.navigate(Screen.PullUpSelect.route) }
+            onStartWorkout = { navController.navigate(Screen.Workout.route) }
         )
 
         Spacer(modifier = Modifier.height(24.dp))

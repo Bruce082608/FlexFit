@@ -1,0 +1,22 @@
+# =============================================================================
+# FlexFit Local Properties - DO NOT COMMIT THIS FILE TO VERSION CONTROL
+# =============================================================================
+# Copy this file to local.properties and fill in your actual values
+# The local.properties file is automatically ignored by .gitignore
+
+# DeepSeek API Configuration (required for LLM post-workout analysis)
+# Get your API key from the DeepSeek platform.
+LLM_API_KEY=your_deepseek_api_key_here
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+
+# Alternative LLM providers (optional):
+# For OpenAI-compatible providers:
+# LLM_API_KEY=your_provider_api_key_here
+# LLM_BASE_URL=https://api.example.com
+# LLM_MODEL=provider-model-name
+
+# For local/self-hosted models:
+# LLM_API_KEY=your_local_api_key
+# LLM_BASE_URL=http://localhost:8080/v1
+# LLM_MODEL=local-model-name

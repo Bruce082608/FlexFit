@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.flexfit.data.model.LlmAnalysisData
 import com.example.flexfit.data.model.WorkoutRecord
 import com.example.flexfit.data.model.WorkoutResult
 import com.example.flexfit.data.model.WorkoutStats
@@ -70,8 +71,13 @@ object WorkoutRecordRepository {
         }
     }
 
-    fun addWorkoutResult(result: WorkoutResult) {
-        val record = result.toRecord()
+    /**
+     * Add a new workout result to the repository.
+     * @param result The workout result to save
+     * @param llmAnalysis Optional LLM analysis data to include with the record
+     */
+    fun addWorkoutResult(result: WorkoutResult, llmAnalysis: LlmAnalysisData? = null) {
+        val record = result.toRecord(llmAnalysis)
         replaceRecords(upsertRecord(_workoutRecords.value, record))
 
         repositoryScope.launch {
@@ -82,6 +88,40 @@ object WorkoutRecordRepository {
         }
     }
 
+    /**
+     * Update an existing workout record with LLM analysis.
+     * Call this after the user requests LLM analysis on a saved workout.
+     */
+    fun updateWorkoutWithLlmAnalysis(workoutId: String, llmAnalysis: LlmAnalysisData) {
+        val currentRecords = _workoutRecords.value
+        val existingRecord = currentRecords.find { it.id == workoutId }
+
+        if (existingRecord != null) {
+            val updatedRecord = existingRecord.copy(llmAnalysis = llmAnalysis)
+            replaceRecords(updateRecord(currentRecords, updatedRecord))
+
+            repositoryScope.launch {
+                dataStore?.edit { preferences ->
+                    val storedRecords = decodeRecordsJson(preferences[recordsJsonKey])
+                    val storedRecord = storedRecords.find { it.id == workoutId }
+                    if (storedRecord != null) {
+                        val storedUpdated = storedRecord.copy(llmAnalysis = llmAnalysis)
+                        preferences[recordsJsonKey] = encodeRecordsJson(
+                            upsertRecord(storedRecords, storedUpdated)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Get a workout record by its ID.
+     */
+    fun getWorkoutById(id: String): WorkoutRecord? {
+        return _workoutRecords.value.find { it.id == id }
+    }
+
     fun getWorkoutRecords(): List<WorkoutRecord> = _workoutRecords.value
 
     fun getRecentRecords(count: Int = 7): List<WorkoutRecord> {
@@ -90,6 +130,20 @@ object WorkoutRecordRepository {
 
     fun getRecordsByExercise(exerciseType: String): List<WorkoutRecord> {
         return _workoutRecords.value.filter { it.exerciseType == exerciseType }
+    }
+
+    /**
+     * Get workout records that have LLM analysis.
+     */
+    fun getRecordsWithLlmAnalysis(): List<WorkoutRecord> {
+        return _workoutRecords.value.filter { it.llmAnalysis != null }
+    }
+
+    /**
+     * Get workout records that do not have LLM analysis yet.
+     */
+    fun getRecordsWithoutLlmAnalysis(): List<WorkoutRecord> {
+        return _workoutRecords.value.filter { it.llmAnalysis == null }
     }
 
     fun clearAllRecords() {
@@ -148,7 +202,15 @@ object WorkoutRecordRepository {
             .sortedByDescending { it.date }
     }
 
-    private fun WorkoutResult.toRecord(): WorkoutRecord {
+    private fun updateRecord(
+        records: List<WorkoutRecord>,
+        updatedRecord: WorkoutRecord
+    ): List<WorkoutRecord> {
+        return records.map { if (it.id == updatedRecord.id) updatedRecord else it }
+            .sortedByDescending { it.date }
+    }
+
+    private fun WorkoutResult.toRecord(llmAnalysis: LlmAnalysisData? = null): WorkoutRecord {
         return WorkoutRecord(
             id = id,
             exerciseType = exerciseType,
@@ -164,7 +226,8 @@ object WorkoutRecordRepository {
             errorsCount = errorsCount,
             warningsCount = warningsCount,
             mainIssues = mainIssues,
-            improvementSuggestions = improvementSuggestions
+            improvementSuggestions = improvementSuggestions,
+            llmAnalysis = llmAnalysis
         )
     }
 

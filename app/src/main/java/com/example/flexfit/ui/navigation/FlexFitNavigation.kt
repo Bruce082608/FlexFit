@@ -31,6 +31,7 @@ import com.example.flexfit.ui.screens.progress.ProgressScreen
 import com.example.flexfit.ui.screens.profile.ProfileScreen
 import com.example.flexfit.ui.screens.pullup.PullUpSelectScreen
 import com.example.flexfit.ui.screens.pullup.PullUpCameraScreen
+import com.example.flexfit.ui.screens.shoulderpress.ShoulderPressTrainingScreen
 import com.example.flexfit.ui.theme.DeepPurple
 import com.example.flexfit.ui.theme.LightBackground
 import com.example.flexfit.ui.theme.TextTertiary
@@ -45,6 +46,7 @@ fun FlexFitNavigation() {
     val showBottomBar = when (currentDestination?.route) {
         Screen.PullUpSelect.route,
         Screen.PullUpCamera.route,
+        Screen.ShoulderPressTraining.route,
         Screen.Calibration.route -> false
         else -> true
     }
@@ -93,7 +95,16 @@ fun FlexFitNavigation() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Home.route) { HomeScreen(navController) }
-            composable(Screen.Workout.route) { WorkoutScreen() }
+            composable(Screen.Workout.route) {
+                WorkoutScreen(
+                    onOpenPullUpSelection = {
+                        navController.navigate(Screen.PullUpSelect.route)
+                    },
+                    onStartShoulderPress = { mode ->
+                        navController.navigate(Screen.ShoulderPressTraining.createRoute(mode))
+                    }
+                )
+            }
             composable(Screen.Progress.route) { ProgressScreen() }
             composable(Screen.Profile.route) { ProfileScreen() }
             
@@ -113,6 +124,15 @@ fun FlexFitNavigation() {
                 
                 PullUpCameraScreen(
                     exerciseType = exerciseType,
+                    mode = mode,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.ShoulderPressTraining.route) { backStackEntry ->
+                val mode = backStackEntry.arguments?.getString("mode") ?: "camera"
+
+                ShoulderPressTrainingScreen(
                     mode = mode,
                     onNavigateBack = { navController.popBackStack() }
                 )

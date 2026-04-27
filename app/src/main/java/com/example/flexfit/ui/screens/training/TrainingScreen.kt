@@ -4,7 +4,6 @@ import android.Manifest
 import android.net.Uri
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -32,7 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
@@ -46,10 +45,12 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -63,6 +64,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,21 +73,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import com.example.flexfit.audio.VoiceGuideManager
 import com.example.flexfit.audio.VoiceType
-import com.example.flexfit.data.repository.WorkoutRecordRepository
 import com.example.flexfit.ml.ExerciseAnalysisResult
 import com.example.flexfit.ml.ExerciseAnalyzer
 import com.example.flexfit.ml.ExercisePhaseTone
 import com.example.flexfit.ml.FeedbackType
 import com.example.flexfit.ml.PoseDetectorCallback
 import com.example.flexfit.ml.PoseDetectorWrapper
+import com.example.flexfit.ml.VideoAnalysisController
 import com.example.flexfit.ml.VoiceAction
+import com.example.flexfit.ui.screens.workout.WorkoutResultDialog
 import com.example.flexfit.ui.theme.AccentPurple
 import com.example.flexfit.ui.theme.DeepPurple
 import com.example.flexfit.ui.theme.ErrorRed
@@ -99,6 +105,8 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.shouldShowRationale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 private val BackgroundDark = Color(0xFF1A1A2E)
@@ -112,43 +120,121 @@ fun TrainingScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val viewModel: TrainingSessionViewModel = viewModel()
+    val scope = rememberCoroutineScope()
+    val viewModel: TrainingSessionViewModel = viewModel(
+        factory = TrainingSessionViewModel.Factory(context.applicationContext)
+    )
     val uiState by viewModel.uiState.collectAsState()
+
+    // ── Camera permission ──────────────────────────────────────────────────────
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
-    val poseDetector = remember { PoseDetectorWrapper() }
-    val voiceGuideManager = remember { VoiceGuideManager(context) }
 
-    var trainingMode by remember(initialMode) { mutableStateOf(initialMode) }
+    // ── All state variables (declared first so launchers can capture them) ────────
+    var hasVideoPermission by remember { mutableStateOf(false) }
     var videoUri by remember { mutableStateOf<Uri?>(null) }
+    var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    var videoAnalysisController by remember {
+        mutableStateOf<VideoAnalysisController?>(null)
+    }
+    var trainingMode by remember(initialMode) { mutableStateOf(initialMode) }
+    var showAnalysisOverlay by remember { mutableStateOf(false) }
+    var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_FRONT) }
 
+    // ── Video picker launcher ─────────────────────────────────────────────────
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        videoUri = uri
-    }
+        if (uri != null) {
+            videoUri = uri
+            scope.launch {
+                try {
+                    // Initialize the video analysis controller
+                    val controller = VideoAnalysisController(context)
+                    videoAnalysisController?.release()
+                    videoAnalysisController = controller
 
-    LaunchedEffect(Unit) {
-        try {
-            poseDetector.initialize()
-        } catch (_: Exception) {
-            // Permission and model initialization errors are surfaced by frame callbacks.
+                    val metadata = controller.initialize(uri)
+                    viewModel.setVideoMetadata(
+                        durationMs = metadata.durationMs,
+                        frameRate = metadata.frameRate,
+                        width = metadata.videoWidth,
+                        height = metadata.videoHeight,
+                        estimatedFrames = metadata.estimatedTotalFrames
+                    )
+
+                    // Build ExoPlayer for preview
+                    exoPlayer?.release()
+                    exoPlayer = controller.buildPlayer()
+
+                    trainingMode = TrainingMode.VIDEO
+                    viewModel.setVideoMode(true)
+                } catch (e: Exception) {
+                    videoAnalysisController?.release()
+                    videoAnalysisController = null
+                    exoPlayer?.release()
+                    exoPlayer = null
+                    videoUri = null
+                    viewModel.showFeedback(
+                        e.message ?: "Selected video file cannot be opened.",
+                        FeedbackType.ERROR
+                    )
+                }
+            }
         }
     }
 
+    // ── Video permission launcher ─────────────────────────────────────────────
+    val videoPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasVideoPermission = granted
+        if (granted) {
+            videoPickerLauncher.launch("video/*")
+        } else {
+            viewModel.showFeedback(
+                "Video permission denied. Please grant video access and try again.",
+                FeedbackType.ERROR
+            )
+        }
+    }
+
+    // ── Pose detector ──────────────────────────────────────────────────────────
+    val poseDetector = remember { PoseDetectorWrapper() }
+    var poseDetectorInitialized by remember { mutableStateOf(false) }
+    var poseDetectorError by remember { mutableStateOf<String?>(null) }
+
+    // ── Voice guide ────────────────────────────────────────────────────────────
+    val voiceGuideManager = remember { VoiceGuideManager(context) }
+
+    // ── Initialize pose detector ──────────────────────────────────────────────
+    LaunchedEffect(Unit) {
+        try {
+            poseDetector.initialize()
+            poseDetectorInitialized = true
+        } catch (e: Exception) {
+            poseDetectorError = e.message ?: "Failed to initialize pose detector"
+        }
+    }
+
+    // ── Cleanup on dispose ─────────────────────────────────────────────────────
     DisposableEffect(Unit) {
         onDispose {
             voiceGuideManager.release()
             poseDetector.close()
+            exoPlayer?.release()
+            videoAnalysisController?.release()
         }
     }
 
+    // ── Elapsed time ticker (camera mode) ─────────────────────────────────────
     LaunchedEffect(uiState.isWorkoutActive, uiState.isPaused) {
-        while (uiState.isWorkoutActive && !uiState.isPaused) {
+        while (uiState.isWorkoutActive && !uiState.isPaused && trainingMode == TrainingMode.CAMERA) {
             delay(1000)
             viewModel.tickElapsedSecond()
         }
     }
 
+    // ── Clear feedback message ─────────────────────────────────────────────────
     LaunchedEffect(uiState.feedbackMessage) {
         if (uiState.feedbackMessage != null) {
             delay(2300)
@@ -156,21 +242,82 @@ fun TrainingScreen(
         }
     }
 
-    fun handleKeypoints(keypoints: FloatArray) {
+    // ── Collect video analysis state ───────────────────────────────────────────
+    LaunchedEffect(videoAnalysisController) {
+        val controller = videoAnalysisController ?: return@LaunchedEffect
+        controller.state.collectLatest { state ->
+            when (state) {
+                is VideoAnalysisController.AnalysisState.Idle -> {
+                    showAnalysisOverlay = false
+                }
+                is VideoAnalysisController.AnalysisState.Analyzing -> {
+                    showAnalysisOverlay = true
+                    viewModel.updateVideoAnalysisProgress(
+                        framesAnalyzed = state.currentFrame,
+                        totalFrames = state.totalFrames,
+                        currentTimeMs = state.frameTimestampMs,
+                        progress = state.progress,
+                        status = state.statusMessage
+                    )
+                }
+                is VideoAnalysisController.AnalysisState.Completed -> {
+                    showAnalysisOverlay = false
+                    viewModel.setAnalyzingVideo(false)
+                }
+                is VideoAnalysisController.AnalysisState.Error -> {
+                    showAnalysisOverlay = false
+                    viewModel.setAnalyzingVideo(false)
+                    viewModel.showFeedback(state.message, FeedbackType.ERROR)
+                }
+                is VideoAnalysisController.AnalysisState.MetadataReady -> { }
+            }
+        }
+    }
+
+    // ── Camera mode keypoint handler ───────────────────────────────────────────
+    fun handleCameraKeypoints(keypoints: FloatArray) {
         val result = analyzer.analyze(keypoints, System.currentTimeMillis())
         viewModel.recordAnalysis(result, keypoints)
         handleVoiceAction(result.voiceAction, voiceGuideManager)
     }
 
+    fun handleCameraKeypoints(keypoints: FloatArray, landmarkConfidences: FloatArray) {
+        val result = analyzer.analyze(keypoints, System.currentTimeMillis())
+        viewModel.recordAnalysis(result, keypoints, landmarkConfidences)
+        handleVoiceAction(result.voiceAction, voiceGuideManager)
+    }
+
+    // ── Camera switch function ────────────────────────────────────────────────
+    fun switchCamera() {
+        lensFacing = if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
+            CameraSelector.LENS_FACING_BACK
+        } else {
+            CameraSelector.LENS_FACING_FRONT
+        }
+    }
+
+    // ── Main UI ────────────────────────────────────────────────────────────────
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(BackgroundDark)
     ) {
         when {
+            // ── Video picker screen ────────────────────────────────────────────
             trainingMode == TrainingMode.VIDEO && videoUri == null -> {
                 VideoPickerView(
-                    onVideoSelected = { videoUri = it },
+                    onVideoSelected = {
+                        if (hasVideoPermission) {
+                            videoPickerLauncher.launch("video/*")
+                        } else {
+                            val permission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                Manifest.permission.READ_MEDIA_VIDEO
+                            } else {
+                                Manifest.permission.READ_EXTERNAL_STORAGE
+                            }
+                            videoPermissionLauncher.launch(permission)
+                        }
+                    },
                     onBack = {
                         if (initialMode == TrainingMode.VIDEO) {
                             onNavigateBack()
@@ -178,49 +325,66 @@ fun TrainingScreen(
                             trainingMode = TrainingMode.CAMERA
                         }
                     },
-                    videoPickerLauncher = videoPickerLauncher
+                    hasVideoPermission = hasVideoPermission,
+                    onRequestVideoPermission = {
+                        val permission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            Manifest.permission.READ_MEDIA_VIDEO
+                        } else {
+                            Manifest.permission.READ_EXTERNAL_STORAGE
+                        }
+                        videoPermissionLauncher.launch(permission)
+                    }
                 )
             }
 
+            // ── Video training view ────────────────────────────────────────────
             trainingMode == TrainingMode.VIDEO && videoUri != null -> {
                 VideoTrainingView(
-                    onFrame = ::handleKeypoints,
-                    mockFrame = analyzer::mockFrame,
-                    isPlaying = uiState.isWorkoutActive && !uiState.isPaused,
-                    onPlaybackStateChange = viewModel::setPlaybackActive,
-                    onAnalysisComplete = { viewModel.endWorkout(analyzer.exerciseName) }
-                )
-
-                PoseOverlay(
-                    keypoints = uiState.lastKeypoints,
-                    phaseTone = uiState.result.phase.tone,
-                    feedbackType = uiState.result.feedback?.type,
-                    modifier = Modifier.fillMaxSize()
+                    exoPlayer = exoPlayer,
+                    videoUri = videoUri,
+                    analysisController = videoAnalysisController,
+                    poseDetector = poseDetector,
+                    analyzer = analyzer,
+                    isAnalyzing = uiState.isAnalyzingVideo,
+                    onAnalysisStarted = {
+                        viewModel.setAnalyzingVideo(true)
+                    },
+                    onKeypointsDetected = { keypoints, result ->
+                        viewModel.recordAnalysis(result, keypoints)
+                        handleVoiceAction(result.voiceAction, voiceGuideManager)
+                    },
+                    onAnalysisComplete = {
+                        viewModel.setAnalyzingVideo(false)
+                        val videoMs = uiState.videoMetadata?.durationMs ?: 0L
+                        viewModel.endWorkoutWithVideoDuration(analyzer.exerciseName, videoMs)
+                    }
                 )
             }
 
-            cameraPermissionState.status.isGranted -> {
+            // ── Camera training view ───────────────────────────────────────────
+            cameraPermissionState.status.isGranted && poseDetectorInitialized -> {
                 CameraTrainingView(
                     poseDetector = poseDetector,
-                    isWorkoutActive = uiState.isWorkoutActive,
-                    isPaused = uiState.isPaused,
-                    onKeypointsDetected = ::handleKeypoints
-                )
-
-                PoseOverlay(
-                    keypoints = uiState.lastKeypoints,
-                    phaseTone = uiState.result.phase.tone,
-                    feedbackType = uiState.result.feedback?.type,
-                    modifier = Modifier.fillMaxSize()
+                    isWorkoutActiveFlow = viewModel.isWorkoutActiveFlow,
+                    isPausedFlow = viewModel.isPausedFlow,
+                    lensFacing = lensFacing,
+                    onKeypointsDetected = ::handleCameraKeypoints
                 )
             }
 
+            // ── Pose detector error ───────────────────────────────────────────
+            poseDetectorError != null -> {
+                ErrorView(message = poseDetectorError!!)
+            }
+
+            // ── Camera permission rationale ──────────────────────────────────
             cameraPermissionState.status.shouldShowRationale -> {
                 PermissionRationale(
                     onRequestPermission = { cameraPermissionState.launchPermissionRequest() }
                 )
             }
 
+            // ── Request camera permission ─────────────────────────────────────
             else -> {
                 PermissionRequest(
                     onRequestPermission = { cameraPermissionState.launchPermissionRequest() }
@@ -228,11 +392,38 @@ fun TrainingScreen(
             }
         }
 
+        // ── Pose overlay (always on top of camera/video) ────────────────────────
+        PoseOverlay(
+            keypoints = uiState.lastKeypoints,
+            landmarkConfidences = uiState.lastLandmarkConfidences,
+            phaseTone = uiState.result.phase.tone,
+            feedbackType = uiState.result.feedback?.type,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // ── Video analysis progress overlay ──────────────────────────────────
+        if (showAnalysisOverlay && uiState.isAnalyzingVideo) {
+            VideoAnalysisProgressOverlay(
+                framesAnalyzed = uiState.videoFramesAnalyzed,
+                totalFrames = uiState.videoTotalFrames,
+                currentTimeMs = uiState.videoCurrentTimeMs,
+                progress = uiState.videoAnalysisProgress,
+                status = uiState.videoAnalysisStatus,
+                metadata = uiState.videoMetadata,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+
+        // ── Top bar ───────────────────────────────────────────────────────────
         TrainingTopBar(
             title = analyzer.exerciseName,
             isActive = uiState.isWorkoutActive,
             isPaused = uiState.isPaused,
-            onBack = onNavigateBack,
+            isVideoMode = trainingMode == TrainingMode.VIDEO,
+            onBack = {
+                videoAnalysisController?.stopAnalysis()
+                onNavigateBack()
+            },
             onStart = {
                 analyzer.reset()
                 voiceGuideManager.resetAll()
@@ -242,62 +433,116 @@ fun TrainingScreen(
             onReset = {
                 analyzer.reset()
                 viewModel.resetSession()
-            }
+            },
+            onSwitchCamera = ::switchCamera
         )
 
+        // ── Bottom stats panel ────────────────────────────────────────────────
         TrainingBottomPanel(
             result = uiState.result,
             elapsedTime = uiState.elapsedTime,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 80.dp)
+                .padding(bottom = 100.dp)
         )
 
+        // ── Control buttons ───────────────────────────────────────────────────
         TrainingControls(
             isWorkoutActive = uiState.isWorkoutActive,
             isPaused = uiState.isPaused,
             isVideoMode = trainingMode == TrainingMode.VIDEO,
+            hasVideo = videoUri != null,
             onStart = {
                 analyzer.reset()
                 voiceGuideManager.resetAll()
                 viewModel.startWorkout()
             },
             onPause = viewModel::togglePause,
-            onEnd = { viewModel.endWorkout(analyzer.exerciseName) },
+            onEnd = {
+                if (trainingMode == TrainingMode.VIDEO && uiState.isAnalyzingVideo) {
+                    videoAnalysisController?.stopAnalysis()
+                    viewModel.setAnalyzingVideo(false)
+                    viewModel.showFeedback("Video analysis canceled.", FeedbackType.INFO)
+                } else {
+                    viewModel.endWorkout(analyzer.exerciseName)
+                }
+            },
             onVideoModeToggle = {
+                val shouldReturnToPicker = trainingMode == TrainingMode.VIDEO && videoUri != null
                 videoUri = null
-                trainingMode = if (trainingMode == TrainingMode.VIDEO) {
+                exoPlayer?.release()
+                exoPlayer = null
+                videoAnalysisController?.release()
+                videoAnalysisController = null
+                viewModel.resetVideoState()
+                trainingMode = if (shouldReturnToPicker) {
+                    TrainingMode.VIDEO
+                } else if (trainingMode == TrainingMode.VIDEO) {
                     TrainingMode.CAMERA
                 } else {
                     TrainingMode.VIDEO
                 }
             },
+            onAnalyzeVideo = {
+                val controller = videoAnalysisController ?: return@TrainingControls
+                if (!poseDetectorInitialized) return@TrainingControls
+
+                analyzer.reset()
+                voiceGuideManager.resetAll()
+                viewModel.resetSessionKeepsVideo()
+                viewModel.startWorkout()
+                controller.startAnalysis(
+                    poseDetector = poseDetector,
+                    analyzer = analyzer,
+                    frameIntervalMs = VideoAnalysisController.AnalysisSpeed.BALANCED.frameIntervalMs
+                ) { _, keypoints, landmarkConfidences, result ->
+                    viewModel.recordAnalysis(result, keypoints, landmarkConfidences)
+                    handleVoiceAction(result.voiceAction, voiceGuideManager)
+                }
+                viewModel.setAnalyzingVideo(true)
+            },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
+        // ── Feedback overlay ─────────────────────────────────────────────────
         FeedbackOverlay(
             visible = uiState.feedbackMessage != null,
             message = uiState.feedbackMessage.orEmpty(),
             type = uiState.feedbackType
         )
 
+        // ── Result dialog ────────────────────────────────────────────────────
         val result = uiState.workoutResult
+        val llmState = uiState.llmAnalysisState
         if (uiState.showResultDialog && result != null) {
-            TrainingResultDialog(
+            LaunchedEffect(result.id) {
+                if (llmState is com.example.flexfit.data.llm.LlmAnalysisState.Idle) {
+                    viewModel.requestLlmAnalysis(result)
+                }
+            }
+
+            WorkoutResultDialog(
                 result = result,
+                llmAnalysisState = llmState,
                 onDismiss = {
                     analyzer.reset()
                     viewModel.closeResultAndReset()
                 },
                 onSaveAndClose = {
-                    WorkoutRecordRepository.addWorkoutResult(result)
+                    viewModel.saveWorkoutResult(result)
                     analyzer.reset()
                     viewModel.closeResultAndReset()
-                }
+                },
+                onRequestLlmAnalysis = { viewModel.requestLlmAnalysis(result) },
+                onRetryLlmAnalysis = { viewModel.retryLlmAnalysis(result) }
             )
         }
     }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Supporting composables
+// ──────────────────────────────────────────────────────────────────────────────
 
 private fun handleVoiceAction(
     action: VoiceAction?,
@@ -315,14 +560,87 @@ private fun handleVoiceAction(
 }
 
 @Composable
+private fun VideoAnalysisProgressOverlay(
+    framesAnalyzed: Int,
+    totalFrames: Int,
+    currentTimeMs: Long,
+    progress: Float,
+    status: String,
+    metadata: VideoAnalysisMetadata?,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 72.dp, start = 16.dp, end = 16.dp)
+            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+            .padding(12.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(
+                    progress = { progress.coerceIn(0f, 1f) },
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = AccentPurple,
+                    trackColor = Color.White.copy(alpha = 0.2f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = status,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { progress.coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = AccentPurple,
+                trackColor = Color.White.copy(alpha = 0.2f)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Frame ${framesAnalyzed.coerceAtLeast(0)} / ${totalFrames.coerceAtLeast(framesAnalyzed).coerceAtLeast(1)}",
+                color = Color.White.copy(alpha = 0.9f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Frame $framesAnalyzed  •  ${formatVideoTime(currentTimeMs)} / ${formatVideoTime(metadata?.durationMs ?: 0L)}",
+                color = TextSecondary,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
+
+private fun formatVideoTime(ms: Long): String {
+    val totalSec = ms / 1000
+    val min = totalSec / 60
+    val sec = totalSec % 60
+    return String.format("%d:%02d", min, sec)
+}
+
+@Composable
 private fun TrainingTopBar(
     title: String,
     isActive: Boolean,
     isPaused: Boolean,
+    isVideoMode: Boolean,
     onBack: () -> Unit,
     onStart: () -> Unit,
     onPause: () -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    onSwitchCamera: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -338,7 +656,7 @@ private fun TrainingTopBar(
                 .background(Color.Black.copy(alpha = 0.5f), CircleShape)
         ) {
             Icon(
-                Icons.Default.ArrowBack,
+                Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
                 tint = Color.White
             )
@@ -356,6 +674,23 @@ private fun TrainingTopBar(
 
         if (isActive) {
             Row {
+                // Camera switch button (only in camera mode)
+                if (!isVideoMode) {
+                    IconButton(
+                        onClick = onSwitchCamera,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            Icons.Default.Cameraswitch,
+                            contentDescription = "Switch Camera",
+                            tint = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+
                 IconButton(
                     onClick = onPause,
                     modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
@@ -381,15 +716,23 @@ private fun TrainingTopBar(
                 }
             }
         } else {
-            IconButton(
-                onClick = onStart,
-                modifier = Modifier.background(SuccessGreen, CircleShape)
-            ) {
-                Icon(
-                    Icons.Default.PlayArrow,
-                    contentDescription = "Start",
-                    tint = Color.White
-                )
+            // Camera switch button (only in camera mode, shown when not active)
+            if (!isVideoMode) {
+                IconButton(
+                    onClick = onSwitchCamera,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(
+                        Icons.Default.Cameraswitch,
+                        contentDescription = "Switch Camera",
+                        tint = Color.White
+                    )
+                }
+            } else {
+                // Placeholder for alignment when in video mode
+                Spacer(modifier = Modifier.width(40.dp))
             }
         }
     }
@@ -406,47 +749,113 @@ private fun TrainingBottomPanel(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         colors = CardDefaults.cardColors(containerColor = PanelBackground),
-        shape = RoundedCornerShape(24.dp)
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(16.dp)
         ) {
+            // Main stats row - compact design
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                StatColumn(value = "${result.count}", label = "Completed", color = AccentPurple)
-                StatColumn(
-                    value = result.phase.label,
-                    label = "Current State",
-                    color = phaseColor(result.phase.tone)
-                )
-                StatColumn(value = formatTime(elapsedTime), label = "Duration", color = TextPrimary)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Rep count with status indicator
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(
+                                if (result.isReady) SuccessGreen else WarningOrange,
+                                CircleShape
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "${result.count}",
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentPurple
+                        )
+                        Text(
+                            text = "Reps",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                // Divider
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
-                        .background(if (result.isReady) SuccessGreen else WarningOrange, CircleShape)
+                        .width(1.dp)
+                        .height(40.dp)
+                        .background(Color.White.copy(alpha = 0.1f))
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+
+                // Current phase
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = result.phase.label,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = phaseColor(result.phase.tone)
+                    )
+                    Text(
+                        text = "Phase",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+
+                // Divider
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(40.dp)
+                        .background(Color.White.copy(alpha = 0.1f))
+                )
+
+                // Duration
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = formatTime(elapsedTime),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Duration",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = if (result.isReady) "Position confirmed" else "Waiting for starting position...",
-                    color = Color.White,
-                    fontSize = 14.sp
+                    text = "Accuracy",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+                Text(
+                    text = "${result.accuracy.toInt()}%",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = phaseColor(result.phase.tone)
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             LinearProgressIndicator(
                 progress = { result.accuracy / 100f },
@@ -458,51 +867,45 @@ private fun TrainingBottomPanel(
                 trackColor = Color.White.copy(alpha = 0.2f)
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
+            // Score badges - compact inline layout
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                MiniScore(label = "Depth", value = result.scores.depth)
-                MiniScore(label = "Alignment", value = result.scores.alignment)
-                MiniScore(label = "Stability", value = result.scores.stability)
+                ScoreBadge(label = "Depth", value = result.scores.depth)
+                ScoreBadge(label = "Align", value = result.scores.alignment)
+                ScoreBadge(label = "Stable", value = result.scores.stability)
             }
         }
     }
 }
 
 @Composable
-private fun StatColumn(
-    value: String,
-    label: String,
-    color: Color
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            fontSize = if (value.length <= 2) 48.sp else 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = color
-        )
+private fun ScoreBadge(label: String, value: Float) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .background(
+                Color.White.copy(alpha = 0.1f),
+                RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
         Text(
             text = label,
-            fontSize = 14.sp,
+            fontSize = 11.sp,
             color = TextSecondary
         )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = "${value.toInt()}%",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White
+        )
     }
-}
-
-@Composable
-private fun MiniScore(
-    label: String,
-    value: Float
-) {
-    Text(
-        text = "$label ${value.toInt()}%",
-        fontSize = 12.sp,
-        color = Color.White.copy(alpha = 0.82f)
-    )
 }
 
 @Composable
@@ -510,10 +913,12 @@ private fun TrainingControls(
     isWorkoutActive: Boolean,
     isPaused: Boolean,
     isVideoMode: Boolean,
+    hasVideo: Boolean,
     onStart: () -> Unit,
     onPause: () -> Unit,
     onEnd: () -> Unit,
     onVideoModeToggle: () -> Unit,
+    onAnalyzeVideo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -524,6 +929,7 @@ private fun TrainingControls(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (!isWorkoutActive) {
+            // Video mode toggle
             IconButton(
                 onClick = onVideoModeToggle,
                 modifier = Modifier
@@ -539,19 +945,35 @@ private fun TrainingControls(
 
             Spacer(modifier = Modifier.width(24.dp))
 
-            Button(
-                onClick = onStart,
-                modifier = Modifier
-                    .height(56.dp)
-                    .width(150.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Start", fontWeight = FontWeight.SemiBold)
+            if (isVideoMode && hasVideo) {
+                // Analyze video button
+                Button(
+                    onClick = onAnalyzeVideo,
+                    modifier = Modifier.height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                ) {
+                    Icon(Icons.Default.PlayCircle, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Analyze Video", fontWeight = FontWeight.SemiBold)
+                }
+            } else {
+                // Start camera button
+                Button(
+                    onClick = onStart,
+                    modifier = Modifier
+                        .height(56.dp)
+                        .width(150.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Start", fontWeight = FontWeight.SemiBold)
+                }
             }
         } else {
+            // End workout button
             Button(
                 onClick = onEnd,
                 modifier = Modifier
@@ -567,6 +989,7 @@ private fun TrainingControls(
 
             Spacer(modifier = Modifier.width(16.dp))
 
+            // Pause/Resume button
             Button(
                 onClick = onPause,
                 modifier = Modifier.size(56.dp),
@@ -588,9 +1011,10 @@ private fun TrainingControls(
 @Composable
 private fun CameraTrainingView(
     poseDetector: PoseDetectorWrapper,
-    isWorkoutActive: Boolean,
-    isPaused: Boolean,
-    onKeypointsDetected: (FloatArray) -> Unit
+    isWorkoutActiveFlow: kotlinx.coroutines.flow.StateFlow<Boolean>,
+    isPausedFlow: kotlinx.coroutines.flow.StateFlow<Boolean>,
+    lensFacing: Int,
+    onKeypointsDetected: (FloatArray, FloatArray) -> Unit
 ) {
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val context = LocalContext.current
@@ -600,20 +1024,21 @@ private fun CameraTrainingView(
         onDispose { cameraExecutor.shutdown() }
     }
 
-    AndroidView(
-        factory = { ctx ->
-            PreviewView(ctx).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                scaleType = PreviewView.ScaleType.FILL_CENTER
-            }
-        },
-        modifier = Modifier.fillMaxSize(),
-        update = { previewView ->
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-            cameraProviderFuture.addListener({
+    val previewView = remember {
+        PreviewView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
+    }
+
+    // Re-bind camera when lensFacing changes
+    LaunchedEffect(previewView, lensFacing) {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        cameraProviderFuture.addListener({
+            try {
                 val cameraProvider = cameraProviderFuture.get()
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
@@ -623,10 +1048,21 @@ private fun CameraTrainingView(
                     .build()
                     .also { analysis ->
                         analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                            if (isWorkoutActive && !isPaused) {
+                            // Read latest state from StateFlow to avoid stale closure
+                            val isActive = isWorkoutActiveFlow.value
+                            val isPaused = isPausedFlow.value
+                            if (isActive && !isPaused) {
                                 poseDetector.processFrame(imageProxy, object : PoseDetectorCallback {
                                     override fun onPoseDetected(keypoints: FloatArray, confidence: Float) {
-                                        onKeypointsDetected(keypoints)
+                                        onKeypointsDetected(keypoints, com.example.flexfit.ml.PoseKeypoints.emptyConfidences())
+                                    }
+
+                                    override fun onPoseDetected(
+                                        keypoints: FloatArray,
+                                        landmarkConfidences: FloatArray,
+                                        confidence: Float
+                                    ) {
+                                        onKeypointsDetected(keypoints, landmarkConfidences)
                                     }
 
                                     override fun onPoseNotDetected() = Unit
@@ -638,162 +1074,266 @@ private fun CameraTrainingView(
                         }
                     }
 
-                try {
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        CameraSelector.DEFAULT_FRONT_CAMERA,
-                        preview,
-                        imageAnalysis
-                    )
-                } catch (_: Exception) {
-                    // Camera errors are non-fatal for the shared training surface.
-                }
-            }, ContextCompat.getMainExecutor(context))
-        }
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    lifecycleOwner,
+                    CameraSelector.Builder()
+                        .requireLensFacing(lensFacing)
+                        .build(),
+                    preview,
+                    imageAnalysis
+                )
+            } catch (_: Exception) {
+                // Camera errors are non-fatal for the shared training surface.
+            }
+        }, ContextCompat.getMainExecutor(context))
+    }
+
+    AndroidView(
+        factory = { previewView },
+        modifier = Modifier.fillMaxSize()
     )
 }
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 private fun VideoTrainingView(
-    onFrame: (FloatArray) -> Unit,
-    mockFrame: (Long) -> FloatArray,
-    isPlaying: Boolean,
-    onPlaybackStateChange: (Boolean) -> Unit,
+    exoPlayer: ExoPlayer?,
+    videoUri: Uri?,
+    analysisController: VideoAnalysisController?,
+    poseDetector: PoseDetectorWrapper,
+    analyzer: ExerciseAnalyzer,
+    isAnalyzing: Boolean,
+    onAnalysisStarted: () -> Unit,
+    onKeypointsDetected: (FloatArray, ExerciseAnalysisResult) -> Unit,
     onAnalysisComplete: () -> Unit
 ) {
-    var isVideoPlaying by remember { mutableStateOf(false) }
-    var videoProgress by remember { mutableStateOf(0f) }
+    val scope = rememberCoroutineScope()
+    var isAnalysisComplete by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isPlaying, isVideoPlaying) {
-        if (isPlaying && isVideoPlaying) {
-            var frameCount = 0L
-            while (isPlaying && isVideoPlaying) {
-                delay(100)
-                frameCount++
-                onFrame(mockFrame(frameCount))
-                videoProgress = (frameCount % 1800) / 1800f
+    // ── ExoPlayer preview ─────────────────────────────────────────────────────
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (exoPlayer != null && videoUri != null) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = true
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Loading state — show metadata from controller
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = AccentPurple)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Loading video...",
+                        color = Color.White,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
 
-                if (frameCount >= 1800) {
-                    isVideoPlaying = false
-                    onPlaybackStateChange(false)
+        // ── "Analyze Video" trigger overlay (before analysis starts) ───────────
+        if (!isAnalyzing && !isAnalysisComplete && exoPlayer != null) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Ready to analyze",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Tap \"Analyze Video\" below to start frame-by-frame analysis",
+                    color = TextSecondary,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        // ── Analysis in progress indicator ────────────────────────────────────
+        if (isAnalyzing) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(16.dp)
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Black.copy(alpha = 0.6f)
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator(color = AccentPurple)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Analyzing frames...",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Pose detection in progress",
+                            color = TextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Auto-complete when analysis state is Completed ─────────────────────
+        LaunchedEffect(analysisController) {
+            val controller = analysisController ?: return@LaunchedEffect
+            controller.state.collectLatest { state ->
+                if (state is VideoAnalysisController.AnalysisState.Completed) {
+                    isAnalysisComplete = true
                     onAnalysisComplete()
                 }
             }
         }
     }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    Icons.Default.PlayCircle,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(64.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Video Playing...", color = Color.White, style = MaterialTheme.typography.bodyLarge)
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            IconButton(
-                onClick = {
-                    isVideoPlaying = !isVideoPlaying
-                    onPlaybackStateChange(isVideoPlaying)
-                },
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(AccentPurple, CircleShape)
-            ) {
-                Icon(
-                    if (isVideoPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isVideoPlaying) "Pause" else "Play",
-                    tint = Color.White,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            LinearProgressIndicator(
-                progress = { videoProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .padding(horizontal = 32.dp),
-                color = AccentPurple,
-                trackColor = Color.White.copy(alpha = 0.3f)
-            )
-        }
-    }
 }
 
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 private fun VideoPickerView(
-    onVideoSelected: (Uri) -> Unit,
+    onVideoSelected: () -> Unit,
     onBack: () -> Unit,
-    videoPickerLauncher: ActivityResultLauncher<String>
+    hasVideoPermission: Boolean,
+    onRequestVideoPermission: () -> Unit
 ) {
-    Column(
+    // Track if permission dialog is showing - hide Card to prevent blocking system dialog
+    var isPermissionDialogVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(hasVideoPermission) {
+        isPermissionDialogVisible = false
+    }
+
+    // When permission request is launched, hide the Card to avoid blocking the system dialog
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .background(BackgroundDark),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(
-            Icons.Default.VideoLibrary,
-            contentDescription = null,
-            tint = AccentPurple,
-            modifier = Modifier.size(80.dp)
-        )
+        if (!isPermissionDialogVisible) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    Icons.Default.VideoLibrary,
+                    contentDescription = null,
+                    tint = AccentPurple,
+                    modifier = Modifier.size(80.dp)
+                )
 
-        Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-        Text(
-            text = "Video Analysis",
-            style = MaterialTheme.typography.headlineSmall,
-            color = Color.White,
-            fontWeight = FontWeight.Bold
-        )
+                Text(
+                    text = "Video Analysis",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
 
-        Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            text = "Select a video to analyze your form",
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
-        )
+                Text(
+                    text = "Select a workout video to analyze your form",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                )
 
-        Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
-        Button(
-            onClick = { videoPickerLauncher.launch("video/*") },
-            colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
-            modifier = Modifier.height(56.dp)
-        ) {
-            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(24.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Choose Video")
-        }
+                if (!hasVideoPermission) {
+                    // Show permission request UI inline
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = DeepPurple.copy(alpha = 0.2f)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Permission Required",
+                                color = Color.White,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "FlexFit needs access to your videos to analyze your workout form.",
+                                color = TextSecondary,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    onRequestVideoPermission()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                                modifier = Modifier.height(48.dp)
+                            ) {
+                                Text("Grant Permission")
+                            }
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = onVideoSelected,
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                        modifier = Modifier.height(56.dp)
+                    ) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Choose Video")
+                    }
+                }
 
-        Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-        TextButton(onClick = onBack) {
-            Text("Back", color = TextSecondary)
+                TextButton(onClick = onBack) {
+                    Text("Back", color = TextSecondary)
+                }
+            }
         }
     }
 }
@@ -856,9 +1396,7 @@ private fun FeedbackOverlay(
 }
 
 @Composable
-private fun PermissionRequest(
-    onRequestPermission: () -> Unit
-) {
+private fun PermissionRequest(onRequestPermission: () -> Unit) {
     PermissionMessage(
         iconColor = AccentPurple,
         title = "Camera Permission Required",
@@ -869,9 +1407,7 @@ private fun PermissionRequest(
 }
 
 @Composable
-private fun PermissionRationale(
-    onRequestPermission: () -> Unit
-) {
+private fun PermissionRationale(onRequestPermission: () -> Unit) {
     PermissionMessage(
         iconColor = WarningOrange,
         title = "Camera Permission Denied",
@@ -928,6 +1464,42 @@ private fun PermissionMessage(
         ) {
             Text(action)
         }
+    }
+}
+
+@Composable
+private fun ErrorView(message: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            Icons.Default.Warning,
+            contentDescription = null,
+            tint = ErrorRed,
+            modifier = Modifier.size(64.dp)
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Initialization Error",
+            style = MaterialTheme.typography.headlineSmall,
+            color = Color.White,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

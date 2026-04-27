@@ -62,6 +62,15 @@ sealed class Screen(
         fun createRoute(exerciseType: String, mode: String) = "pullup_camera/$exerciseType/$mode"
     }
 
+    data object ShoulderPressTraining : Screen(
+        route = "shoulder_press/{mode}",
+        title = "Shoulder Press",
+        selectedIcon = Icons.Filled.FitnessCenter,
+        unselectedIcon = Icons.Outlined.FitnessCenter
+    ) {
+        fun createRoute(mode: String) = "shoulder_press/$mode"
+    }
+
     data object Calibration : Screen(
         route = "calibration",
         title = "Calibration",

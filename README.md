@@ -4,13 +4,8 @@ FlexFit is an Android fitness coaching demo built with Kotlin, Jetpack Compose, 
 
 ## Open In Android Studio
 
-Open the repository root:
-
-```bash
-/Users/fairchan/Desktop/1/FlexFit
-```
-
-Do not open only the `app/` folder. Android Studio should import the whole Gradle project.
+Open the repository root in Android Studio. Do not open only the `app/` folder;
+Android Studio should import the whole Gradle project.
 
 ## Local Environment
 
@@ -24,9 +19,11 @@ Use one of these local setup options:
 sdk.dir=/path/to/Android/sdk
 ```
 
-On macOS this is commonly:
+Example paths:
 
 ```properties
+sdk.dir=C\:\\path\\to\\Android\\Sdk
+# or
 sdk.dir=/Users/<your-user>/Library/Android/sdk
 ```
 
@@ -38,13 +35,24 @@ export ANDROID_HOME=/path/to/Android/sdk
 
 `local.properties` is machine-specific and must not be committed. It is already ignored by `.gitignore`.
 
+Optional DeepSeek-compatible post-workout AI analysis is configured from the same
+local file:
+
+```properties
+LLM_API_KEY=your_deepseek_api_key_here
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+```
+
+Use `local.properties.example` as the template. Never commit real API keys.
+
 ## Build Checks
 
 Minimum checks before submitting changes:
 
-```bash
-./gradlew test
-./gradlew assembleDebug
+```powershell
+.\gradlew.bat test
+.\gradlew.bat assembleDebug
 ```
 
 `assembleDebug` writes the debug APK under:
@@ -52,6 +60,13 @@ Minimum checks before submitting changes:
 ```bash
 app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Demo Quality Gate
+
+Before a live demo, run the build checks above and complete the manual checklist
+in [docs/demo-quality-gate.md](docs/demo-quality-gate.md). The demo must still
+complete local rule-based analysis without network access; DeepSeek is only used
+for post-workout AI Analysis when a valid local key and network are available.
 
 ## Current Warning Policy
 

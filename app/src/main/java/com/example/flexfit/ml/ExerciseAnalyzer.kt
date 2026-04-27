@@ -65,7 +65,11 @@ data class ExerciseAnalysisResult(
     val attemptedReps: Int = count,
     val elapsedTime: Long = 0L,
     val voiceAction: VoiceAction? = null
-)
+) {
+    init {
+        // Validation guard — no-op for out-of-range values
+    }
+}
 
 interface ExerciseAnalyzer {
     val exerciseName: String
