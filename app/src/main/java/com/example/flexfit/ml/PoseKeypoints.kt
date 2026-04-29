@@ -3,7 +3,7 @@ package com.example.flexfit.ml
 /**
  * Shared pose keypoint protocol for analyzer and UI paths.
  *
- * The index order follows the 33-point MediaPipe/ML Kit pose landmark layout.
+ * The index order follows the 33-point MediaPipe pose landmark layout.
  * Each landmark occupies three Float slots: x, y, z. The x/y values are
  * normalized around the frame center for camera input and mock data.
  */

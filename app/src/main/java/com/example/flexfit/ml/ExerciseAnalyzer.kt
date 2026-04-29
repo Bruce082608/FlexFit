@@ -47,7 +47,20 @@ enum class VoiceAction {
     FAIL,
     SWINGING,
     SHRUGGING,
-    NOT_HIGH
+    NOT_HIGH,
+    SHP_ADJUST_GRIP,
+    SHP_ARMS_BALANCE,
+    SHP_BODY_UPRIGHT,
+    SHP_START_POSITION,
+    SHP_START,
+    SHP_BRACE_CORE,
+    SHP_SHRUGGING,
+    SHP_NOT_HIGH,
+    SHP_BODY_LEAN,
+    SHP_ELBOW_FLARE,
+    SHP_BAD_WRIST,
+    SHP_SUCCESS,
+    SHP_FAIL
 }
 
 data class ExerciseAnalysisResult(

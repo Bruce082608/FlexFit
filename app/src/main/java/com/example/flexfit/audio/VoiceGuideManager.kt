@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.MediaPlayer
 import com.example.flexfit.R
 import kotlinx.coroutines.*
+import kotlin.random.Random
 
 /**
  * Voice guide manager for workout audio feedback.
@@ -59,7 +60,7 @@ class VoiceGuideManager(private val context: Context) {
      * Only triggers if error is detected for consecutive frames.
      */
     fun triggerWarning(voiceType: VoiceType): Boolean {
-        if (voiceType == VoiceType.START || voiceType == VoiceType.SUCCESS || voiceType == VoiceType.FAIL) {
+        if (voiceType.instantPlayback) {
             // These are instant triggers, no confirmation needed
             playVoice(voiceType)
             return true
@@ -87,6 +88,17 @@ class VoiceGuideManager(private val context: Context) {
         return false
     }
 
+    private val VoiceType.instantPlayback: Boolean
+        get() = when (this) {
+            VoiceType.START,
+            VoiceType.SUCCESS,
+            VoiceType.FAIL,
+            VoiceType.SHP_START,
+            VoiceType.SHP_SUCCESS,
+            VoiceType.SHP_FAIL -> true
+            else -> false
+        }
+
     /**
      * Reset warning counter when error is not detected.
      */
@@ -112,6 +124,19 @@ class VoiceGuideManager(private val context: Context) {
             VoiceType.SWINGING -> "swinging"
             VoiceType.SHRUGGING -> "shrugging"
             VoiceType.NOT_HIGH -> "not_high"
+            VoiceType.SHP_ADJUST_GRIP -> "shp_adjust_grip"
+            VoiceType.SHP_ARMS_BALANCE -> "shp_arms_balance"
+            VoiceType.SHP_BODY_UPRIGHT -> "shp_body_upright"
+            VoiceType.SHP_START_POSITION -> "shp_start_position"
+            VoiceType.SHP_START -> "shp_start"
+            VoiceType.SHP_BRACE_CORE -> "shp_brace_core"
+            VoiceType.SHP_SHRUGGING -> "shp_shrugging"
+            VoiceType.SHP_NOT_HIGH -> "shp_not_high"
+            VoiceType.SHP_BODY_LEAN -> "shp_body_lean"
+            VoiceType.SHP_ELBOW_FLARE -> "shp_elbow_flare"
+            VoiceType.SHP_BAD_WRIST -> "shp_bad_wrist"
+            VoiceType.SHP_SUCCESS -> "shp_success_${Random.nextInt(1, 4)}"
+            VoiceType.SHP_FAIL -> "shp_fail_${Random.nextInt(1, 3)}"
         }
         return context.resources.getIdentifier(name, "raw", context.packageName)
     }
@@ -157,5 +182,18 @@ enum class VoiceType {
     FAIL,         // Rep failed (not pulled high enough)
     SWINGING,     // Body swinging detected
     SHRUGGING,    // Shrugging detected at top
-    NOT_HIGH      // Not pulled high enough
+    NOT_HIGH,     // Not pulled high enough
+    SHP_ADJUST_GRIP,
+    SHP_ARMS_BALANCE,
+    SHP_BODY_UPRIGHT,
+    SHP_START_POSITION,
+    SHP_START,
+    SHP_BRACE_CORE,
+    SHP_SHRUGGING,
+    SHP_NOT_HIGH,
+    SHP_BODY_LEAN,
+    SHP_ELBOW_FLARE,
+    SHP_BAD_WRIST,
+    SHP_SUCCESS,
+    SHP_FAIL
 }

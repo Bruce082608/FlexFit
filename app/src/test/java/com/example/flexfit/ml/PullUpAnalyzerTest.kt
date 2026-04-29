@@ -180,9 +180,9 @@ class PullUpAnalyzerTest {
     }
 
     private fun lowTopPose(): FloatArray = topPose().apply {
-        setPoint(0, 0f, 0.84f)
-        setPoint(7, -0.08f, 0.80f)
-        setPoint(8, 0.08f, 0.80f)
+        setPoint(0, 0f, 0.20f)
+        setPoint(7, -0.08f, 0.16f)
+        setPoint(8, 0.08f, 0.16f)
     }
 
     private fun shruggingTopPose(): FloatArray = topPose().apply {

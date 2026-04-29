@@ -45,13 +45,30 @@ sealed class Screen(
         unselectedIcon = Icons.Outlined.Person
     )
 
-    // Pull-up related screens
-    data object PullUpSelect : Screen(
-        route = "pullup_select",
-        title = "Pull-up Selection",
+    data object ProfileEdit : Screen(
+        route = "profile_edit",
+        title = "Edit Profile",
+        selectedIcon = Icons.Filled.Person,
+        unselectedIcon = Icons.Outlined.Person
+    )
+
+    data object ProfileInfo : Screen(
+        route = "profile_info/{type}",
+        title = "Profile Info",
+        selectedIcon = Icons.Filled.Person,
+        unselectedIcon = Icons.Outlined.Person
+    ) {
+        fun createRoute(type: String) = "profile_info/$type"
+    }
+
+    data object WorkoutSetup : Screen(
+        route = "workout_setup/{exerciseType}",
+        title = "Workout Setup",
         selectedIcon = Icons.Filled.FitnessCenter,
         unselectedIcon = Icons.Outlined.FitnessCenter
-    )
+    ) {
+        fun createRoute(exerciseType: String) = "workout_setup/$exerciseType"
+    }
 
     data object PullUpCamera : Screen(
         route = "pullup_camera/{exerciseType}/{mode}",

@@ -16,9 +16,6 @@ import com.example.flexfit.data.model.PoseLandmarkMapping
  *
  * Reference: https://developers.google.com/mediapipe/solutions/vision/pose_landmarker
  *
- * TODO: Add MediaPipe dependency to build.gradle.kts:
- *       implementation("com.google.mediapipe:mediapipe-pose:0.10.14")
- *
  * TODO: User will integrate their custom algorithm implementation here
  */
 class MediaPipePoseDetector(private val context: Context) {

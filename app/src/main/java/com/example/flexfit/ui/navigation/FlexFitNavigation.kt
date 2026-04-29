@@ -25,11 +25,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.flexfit.data.model.ExerciseType
 import com.example.flexfit.ui.screens.home.HomeScreen
 import com.example.flexfit.ui.screens.workout.WorkoutScreen
+import com.example.flexfit.ui.screens.workout.WorkoutSetupScreen
 import com.example.flexfit.ui.screens.progress.ProgressScreen
+import com.example.flexfit.ui.screens.profile.EditProfileScreen
+import com.example.flexfit.ui.screens.profile.ProfileInfoScreen
+import com.example.flexfit.ui.screens.profile.ProfileInfoType
 import com.example.flexfit.ui.screens.profile.ProfileScreen
-import com.example.flexfit.ui.screens.pullup.PullUpSelectScreen
 import com.example.flexfit.ui.screens.pullup.PullUpCameraScreen
 import com.example.flexfit.ui.screens.shoulderpress.ShoulderPressTrainingScreen
 import com.example.flexfit.ui.theme.DeepPurple
@@ -44,9 +48,11 @@ fun FlexFitNavigation() {
     
     // Determine if bottom bar should be shown
     val showBottomBar = when (currentDestination?.route) {
-        Screen.PullUpSelect.route,
+        Screen.WorkoutSetup.route,
         Screen.PullUpCamera.route,
         Screen.ShoulderPressTraining.route,
+        Screen.ProfileEdit.route,
+        Screen.ProfileInfo.route,
         Screen.Calibration.route -> false
         else -> true
     }
@@ -106,23 +112,45 @@ fun FlexFitNavigation() {
             composable(Screen.Home.route) { HomeScreen(navController) }
             composable(Screen.Workout.route) {
                 WorkoutScreen(
-                    onOpenPullUpSelection = {
-                        navController.navigate(Screen.PullUpSelect.route)
-                    },
-                    onStartShoulderPress = { mode ->
-                        navController.navigate(Screen.ShoulderPressTraining.createRoute(mode))
+                    onOpenExerciseSetup = { exercise ->
+                        navController.navigate(Screen.WorkoutSetup.createRoute(exercise.name.lowercase()))
                     }
                 )
             }
             composable(Screen.Progress.route) { ProgressScreen() }
-            composable(Screen.Profile.route) { ProfileScreen() }
-            
-            // Pull-up related screens
-            composable(Screen.PullUpSelect.route) {
-                PullUpSelectScreen(
+            composable(Screen.Profile.route) {
+                ProfileScreen(
+                    onEditProfile = { navController.navigate(Screen.ProfileEdit.route) },
+                    onOpenProfileInfo = { type ->
+                        navController.navigate(Screen.ProfileInfo.createRoute(type.routeValue))
+                    }
+                )
+            }
+            composable(Screen.ProfileEdit.route) {
+                EditProfileScreen(onNavigateBack = { navController.popBackStack() })
+            }
+            composable(Screen.ProfileInfo.route) { backStackEntry ->
+                val type = ProfileInfoType.fromRouteValue(backStackEntry.arguments?.getString("type"))
+                ProfileInfoScreen(
+                    type = type,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.WorkoutSetup.route) { backStackEntry ->
+                val routeValue = backStackEntry.arguments?.getString("exerciseType")
+                val exercise = ExerciseType.entries.firstOrNull {
+                    it.name.equals(routeValue, ignoreCase = true)
+                } ?: ExerciseType.PULL_UP
+
+                WorkoutSetupScreen(
+                    exercise = exercise,
                     onNavigateBack = { navController.popBackStack() },
-                    onStartTraining = { pullUpType, mode ->
+                    onStartPullUp = { pullUpType, mode ->
                         navController.navigate(Screen.PullUpCamera.createRoute(pullUpType.name.lowercase(), mode))
+                    },
+                    onStartShoulderPress = { mode ->
+                        navController.navigate(Screen.ShoulderPressTraining.createRoute(mode))
                     }
                 )
             }

@@ -1,6 +1,7 @@
 package com.example.flexfit.ui.screens.home
 
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -42,9 +43,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -60,6 +64,9 @@ import com.example.flexfit.ui.theme.SuccessGreen
 import com.example.flexfit.ui.theme.TextPrimary
 import com.example.flexfit.ui.theme.TextSecondary
 import com.example.flexfit.ui.theme.WarningOrange
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 private val HomeDeep = Color(0xFF3B2473)
 private val HomeInk = Color(0xFF241346)
@@ -303,68 +310,112 @@ private fun HomeStatCard(
 @Composable
 private fun MotionLineBackdrop() {
     val transition = rememberInfiniteTransition(label = "home_motion_lines")
-    val flow by transition.animateFloat(
+    val phase by transition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
+        targetValue = (PI * 2).toFloat(),
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 4200),
+            animation = tween(durationMillis = 7600, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "line_offset"
+        label = "line_phase"
     )
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
-        val diagonalTravel = w * 0.42f
-        val offset = diagonalTravel * flow
+        val left = -w * 0.14f
+        val right = w * 1.14f
+        val steps = 72
 
-        repeat(8) { index ->
-            val baseX = w * (0.08f + index * 0.14f) - offset
-            val startX = (baseX + diagonalTravel) % (w + diagonalTravel) - diagonalTravel * 0.5f
-            val startY = h * (0.14f + (index % 4) * 0.18f)
-            val lineLength = w * (0.22f + (index % 3) * 0.04f)
+        val layers = listOf(
+            LineLayer(y = 0.12f, amplitude = 0.022f, frequency = 1.45f, width = 1.4f, alpha = 0.22f, speed = 1.0f),
+            LineLayer(y = 0.21f, amplitude = 0.030f, frequency = 1.10f, width = 3.2f, alpha = 0.18f, speed = -0.72f),
+            LineLayer(y = 0.34f, amplitude = 0.024f, frequency = 1.70f, width = 6.4f, alpha = 0.14f, speed = 0.58f),
+            LineLayer(y = 0.49f, amplitude = 0.036f, frequency = 1.24f, width = 2.1f, alpha = 0.26f, speed = 0.86f),
+            LineLayer(y = 0.64f, amplitude = 0.028f, frequency = 1.58f, width = 8.2f, alpha = 0.12f, speed = -0.48f),
+            LineLayer(y = 0.78f, amplitude = 0.020f, frequency = 1.34f, width = 2.8f, alpha = 0.20f, speed = 0.68f)
+        )
+
+        layers.forEachIndexed { index, layer ->
+            val path = Path()
+            for (step in 0..steps) {
+                val progress = step / steps.toFloat()
+                val x = left + (right - left) * progress
+                val wave = sin(progress * layer.frequency * PI.toFloat() * 2f + phase * layer.speed + index * 0.82f)
+                val crossWave = cos(progress * PI.toFloat() * 3f + phase * layer.speed * 0.42f)
+                val y = h * layer.y + h * layer.amplitude * wave + h * layer.amplitude * 0.34f * crossWave
+                if (step == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+
+            drawPath(
+                path = path,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.02f),
+                        LightPurple.copy(alpha = layer.alpha),
+                        Color.White.copy(alpha = layer.alpha * 0.78f),
+                        AccentPurple.copy(alpha = layer.alpha * 0.92f),
+                        Color.White.copy(alpha = 0.02f)
+                    ),
+                    startX = left,
+                    endX = right
+                ),
+                style = Stroke(
+                    width = layer.width,
+                    cap = StrokeCap.Round
+                )
+            )
+        }
+
+        repeat(9) { index ->
+            val orbit = phase * (if (index % 2 == 0) 1f else -1f) + index * 0.71f
+            val centerX = w * (0.50f + 0.42f * sin(orbit * 0.42f + index))
+            val centerY = h * (0.16f + 0.70f * ((index % 7) / 6f)) +
+                h * 0.020f * cos(orbit)
+            val length = w * (0.12f + (index % 4) * 0.035f)
+            val tilt = h * (0.020f + (index % 3) * 0.010f)
+            val thick = when (index % 4) {
+                0 -> 1.7f
+                1 -> 3.8f
+                2 -> 6.0f
+                else -> 9.0f
+            }
+            val alpha = 0.16f + (index % 3) * 0.055f
 
             drawLine(
-                color = Color.White.copy(alpha = 0.16f),
-                start = androidx.compose.ui.geometry.Offset(startX, startY),
-                end = androidx.compose.ui.geometry.Offset(startX + lineLength, startY + h * 0.08f),
-                strokeWidth = 3.2f,
+                color = if (index % 2 == 0) Color.White.copy(alpha = alpha) else LightPurple.copy(alpha = alpha),
+                start = Offset(centerX - length, centerY - tilt),
+                end = Offset(centerX + length, centerY + tilt),
+                strokeWidth = thick,
                 cap = StrokeCap.Round
             )
         }
 
-        repeat(6) { index ->
-            val baseX = w * (0.02f + index * 0.20f) + offset * 0.58f
-            val startX = baseX % (w + diagonalTravel) - diagonalTravel * 0.2f
-            val startY = h * (0.22f + index * 0.11f)
-
-            drawLine(
-                color = LightPurple.copy(alpha = 0.26f),
-                start = androidx.compose.ui.geometry.Offset(startX, startY),
-                end = androidx.compose.ui.geometry.Offset(startX + w * 0.16f, startY - h * 0.05f),
-                strokeWidth = 7.5f,
-                cap = StrokeCap.Round
-            )
-        }
-
-        val pulseX = w * (0.12f + flow * 0.72f)
         drawLine(
-            color = AccentPurple.copy(alpha = 0.44f),
-            start = androidx.compose.ui.geometry.Offset(pulseX - w * 0.28f, h * 0.62f),
-            end = androidx.compose.ui.geometry.Offset(pulseX + w * 0.22f, h * 0.70f),
-            strokeWidth = 10f,
+            color = AccentPurple.copy(alpha = 0.30f + 0.08f * sin(phase)),
+            start = Offset(w * (0.08f + 0.035f * sin(phase * 0.7f)), h * 0.58f),
+            end = Offset(w * (0.92f + 0.035f * cos(phase * 0.7f)), h * 0.68f),
+            strokeWidth = 11f,
             cap = StrokeCap.Round
         )
         drawLine(
-            color = Color.White.copy(alpha = 0.28f),
-            start = androidx.compose.ui.geometry.Offset(pulseX - w * 0.18f, h * 0.65f),
-            end = androidx.compose.ui.geometry.Offset(pulseX + w * 0.14f, h * 0.70f),
-            strokeWidth = 2.6f,
+            color = Color.White.copy(alpha = 0.24f + 0.08f * cos(phase)),
+            start = Offset(w * (0.16f + 0.024f * cos(phase * 0.9f)), h * 0.61f),
+            end = Offset(w * (0.84f + 0.024f * sin(phase * 0.9f)), h * 0.67f),
+            strokeWidth = 2.4f,
             cap = StrokeCap.Round
         )
     }
 }
+
+private data class LineLayer(
+    val y: Float,
+    val amplitude: Float,
+    val frequency: Float,
+    val width: Float,
+    val alpha: Float,
+    val speed: Float
+)
 
 private fun getGreeting(): String {
     val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)

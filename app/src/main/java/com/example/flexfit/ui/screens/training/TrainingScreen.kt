@@ -199,7 +199,7 @@ fun TrainingScreen(
     }
 
     // ── Pose detector ──────────────────────────────────────────────────────────
-    val poseDetector = remember { PoseDetectorWrapper() }
+    val poseDetector = remember { PoseDetectorWrapper(context.applicationContext) }
     var poseDetectorInitialized by remember { mutableStateOf(false) }
     var poseDetectorError by remember { mutableStateOf<String?>(null) }
 
@@ -555,6 +555,19 @@ private fun handleVoiceAction(
         VoiceAction.SWINGING -> voiceGuideManager.triggerWarning(VoiceType.SWINGING)
         VoiceAction.SHRUGGING -> voiceGuideManager.triggerWarning(VoiceType.SHRUGGING)
         VoiceAction.NOT_HIGH -> voiceGuideManager.triggerWarning(VoiceType.NOT_HIGH)
+        VoiceAction.SHP_ADJUST_GRIP -> voiceGuideManager.playVoice(VoiceType.SHP_ADJUST_GRIP)
+        VoiceAction.SHP_ARMS_BALANCE -> voiceGuideManager.playVoice(VoiceType.SHP_ARMS_BALANCE)
+        VoiceAction.SHP_BODY_UPRIGHT -> voiceGuideManager.playVoice(VoiceType.SHP_BODY_UPRIGHT)
+        VoiceAction.SHP_START_POSITION -> voiceGuideManager.playVoice(VoiceType.SHP_START_POSITION)
+        VoiceAction.SHP_START -> voiceGuideManager.playVoice(VoiceType.SHP_START)
+        VoiceAction.SHP_BRACE_CORE -> voiceGuideManager.playVoice(VoiceType.SHP_BRACE_CORE)
+        VoiceAction.SHP_SHRUGGING -> voiceGuideManager.playVoice(VoiceType.SHP_SHRUGGING)
+        VoiceAction.SHP_NOT_HIGH -> voiceGuideManager.playVoice(VoiceType.SHP_NOT_HIGH)
+        VoiceAction.SHP_BODY_LEAN -> voiceGuideManager.playVoice(VoiceType.SHP_BODY_LEAN)
+        VoiceAction.SHP_ELBOW_FLARE -> voiceGuideManager.playVoice(VoiceType.SHP_ELBOW_FLARE)
+        VoiceAction.SHP_BAD_WRIST -> voiceGuideManager.playVoice(VoiceType.SHP_BAD_WRIST)
+        VoiceAction.SHP_SUCCESS -> voiceGuideManager.playVoice(VoiceType.SHP_SUCCESS)
+        VoiceAction.SHP_FAIL -> voiceGuideManager.playVoice(VoiceType.SHP_FAIL)
         null -> Unit
     }
 }

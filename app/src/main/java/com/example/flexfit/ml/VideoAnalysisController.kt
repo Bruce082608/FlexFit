@@ -202,7 +202,7 @@ class VideoAnalysisController(private val context: Context) {
 
                 if (posesDetected == 0 || lastResult == null) {
                     _state.value = AnalysisState.Error(
-                        "ML Kit did not detect a human pose in this video. Please choose a clearer video."
+                        "MediaPipe did not detect a human pose in this video. Please choose a clearer video."
                     )
                     return@launch
                 }

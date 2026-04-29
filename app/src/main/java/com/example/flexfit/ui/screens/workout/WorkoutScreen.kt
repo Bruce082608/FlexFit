@@ -17,23 +17,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.VideoLibrary
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,11 +44,8 @@ import com.example.flexfit.ui.theme.TextTertiary
 
 @Composable
 fun WorkoutScreen(
-    onOpenPullUpSelection: () -> Unit,
-    onStartShoulderPress: (String) -> Unit
+    onOpenExerciseSetup: (ExerciseType) -> Unit
 ) {
-    var selectedExercise by remember { mutableStateOf<ExerciseType?>(null) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -72,7 +61,7 @@ fun WorkoutScreen(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Choose an exercise and training mode.",
+            text = "Pick a movement, then choose camera or video analysis.",
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary
         )
@@ -82,18 +71,7 @@ fun WorkoutScreen(
         ExerciseType.entries.forEach { exercise ->
             ExerciseSelectionCard(
                 exercise = exercise,
-                isSelected = selectedExercise == exercise,
-                onClick = {
-                    when (exercise) {
-                        ExerciseType.PULL_UP -> onOpenPullUpSelection()
-                        ExerciseType.SHOULDER_PRESS -> {
-                            selectedExercise = if (selectedExercise == exercise) null else exercise
-                        }
-                        else -> Unit
-                    }
-                },
-                onStartCamera = { onStartShoulderPress("camera") },
-                onStartVideo = { onStartShoulderPress("video") }
+                onClick = { onOpenExerciseSetup(exercise) }
             )
             Spacer(modifier = Modifier.height(12.dp))
         }
@@ -105,89 +83,75 @@ fun WorkoutScreen(
 @Composable
 private fun ExerciseSelectionCard(
     exercise: ExerciseType,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    onStartCamera: () -> Unit,
-    onStartVideo: () -> Unit
+    onClick: () -> Unit
 ) {
     val isAvailable = exercise.isImplemented
-    val cardColor = if (isAvailable) SurfaceLight else SurfaceLight.copy(alpha = 0.68f)
-    val accentColor = when {
-        !isAvailable -> TextTertiary
-        isSelected -> AccentPurple
-        else -> DeepPurple
-    }
+    val accentColor = if (isAvailable) DeepPurple else TextTertiary
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = isAvailable, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = cardColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 1.dp)
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isAvailable) SurfaceLight else SurfaceLight.copy(alpha = 0.68f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .background(
+                        color = if (isAvailable) LightPurple else LightPurple.copy(alpha = 0.35f),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .background(
-                            color = if (isAvailable) LightPurple else LightPurple.copy(alpha = 0.35f),
-                            shape = CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isAvailable) Icons.Default.FitnessCenter else Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = accentColor,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = exercise.displayName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isAvailable) TextPrimary else TextTertiary
-                        )
-                        StatusLabel(isAvailable = isAvailable)
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = exercise.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isAvailable) TextSecondary else TextTertiary
-                    )
-                }
-            }
-
-            if (exercise == ExerciseType.PULL_UP) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Select grip width before choosing camera or video mode.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
+                Icon(
+                    imageVector = if (isAvailable) Icons.Default.FitnessCenter else Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = if (isAvailable) AccentPurple else TextTertiary,
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
-            if (exercise == ExerciseType.SHOULDER_PRESS && isSelected) {
-                Spacer(modifier = Modifier.height(16.dp))
-                TrainingModeButtons(
-                    onStartCamera = onStartCamera,
-                    onStartVideo = onStartVideo
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = exercise.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isAvailable) TextPrimary else TextTertiary
+                    )
+                    StatusLabel(isAvailable = isAvailable)
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = exercise.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isAvailable) TextSecondary else TextTertiary
+                )
+            }
+
+            if (isAvailable) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
@@ -212,49 +176,5 @@ private fun StatusLabel(isAvailable: Boolean) {
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center
         )
-    }
-}
-
-@Composable
-private fun TrainingModeButtons(
-    onStartCamera: () -> Unit,
-    onStartVideo: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Button(
-            onClick = onStartCamera,
-            modifier = Modifier
-                .weight(1f)
-                .height(48.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
-        ) {
-            Icon(
-                imageVector = Icons.Default.CameraAlt,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.size(8.dp))
-            Text("Camera")
-        }
-
-        OutlinedButton(
-            onClick = onStartVideo,
-            modifier = Modifier
-                .weight(1f)
-                .height(48.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.VideoLibrary,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.size(8.dp))
-            Text("Video")
-        }
     }
 }

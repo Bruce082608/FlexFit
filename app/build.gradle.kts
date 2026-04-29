@@ -27,6 +27,10 @@ android {
         buildConfigField("String", "LLM_BASE_URL", "\"${localProperties.getProperty("LLM_BASE_URL", "")}\"")
         buildConfigField("String", "LLM_API_KEY", "\"${localProperties.getProperty("LLM_API_KEY", "")}\"")
         buildConfigField("String", "LLM_MODEL", "\"${localProperties.getProperty("LLM_MODEL", "deepseek-chat")}\"")
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86")
+        }
     }
 
     buildFeatures {
@@ -94,9 +98,8 @@ dependencies {
     // Gson
     implementation("com.google.code.gson:gson:2.10.1")
 
-    // MediaPipe for Pose Detection - using ML Kit Pose as alternative
-    implementation("com.google.mlkit:pose-detection:18.0.0-beta4")
-    implementation("com.google.mlkit:pose-detection-accurate:18.0.0-beta4")
+    // MediaPipe Pose Landmarker
+    implementation("com.google.mediapipe:tasks-vision:0.10.14")
 
     // ExoPlayer for video playback and frame extraction
     implementation("androidx.media3:media3-exoplayer:1.2.0")

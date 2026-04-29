@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -45,8 +46,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -86,33 +90,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun ProfileScreen() {
+fun ProfileScreen(
+    onEditProfile: () -> Unit,
+    onOpenProfileInfo: (ProfileInfoType) -> Unit
+) {
     val profile by UserProfileRepository.profile.collectAsState()
     val totalWorkouts by WorkoutRecordRepository.totalWorkouts.collectAsState()
     val averageAccuracy by WorkoutRecordRepository.averageAccuracy.collectAsState()
     val currentStreak by WorkoutRecordRepository.currentStreak.collectAsState()
-    val context = LocalContext.current
 
     var showBodyStatsDialog by remember { mutableStateOf(false) }
-    var showEditProfileDialog by remember { mutableStateOf(false) }
-    var showAboutDialog by remember { mutableStateOf(false) }
-    var infoDialog by remember { mutableStateOf<InfoDialogState?>(null) }
-    var pendingAvatarSetter by remember { mutableStateOf<((String) -> Unit)?>(null) }
-
-    val avatarPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }
-            pendingAvatarSetter?.invoke(uri.toString())
-            pendingAvatarSetter = null
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -125,7 +112,7 @@ fun ProfileScreen() {
             totalWorkouts = totalWorkouts,
             currentStreak = currentStreak,
             averageAccuracy = averageAccuracy,
-            onEditProfile = { showEditProfileDialog = true }
+            onEditProfile = onEditProfile
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -146,37 +133,17 @@ fun ProfileScreen() {
         Spacer(modifier = Modifier.height(24.dp))
 
         SettingsSection(
-            onEditProfile = { showEditProfileDialog = true },
-            onNotifications = {
-                infoDialog = InfoDialogState(
-                    title = "Notifications",
-                    message = "Workout reminders are ready for the demo profile. Full scheduling can be connected later from Android system notification settings."
-                )
-            },
-            onDeviceSettings = {
-                infoDialog = InfoDialogState(
-                    title = "Device Settings",
-                    message = "FlexFit uses the phone camera, local video picker, on-device pose detection, and optional post-workout network access for AI Analysis."
-                )
-            },
-            onFeedback = {
-                infoDialog = InfoDialogState(
-                    title = "Feedback",
-                    message = "Send demo feedback to the FlexFit team with the exercise name, device model, and what happened during the session."
-                )
-            }
+            onEditProfile = onEditProfile,
+            onNotifications = { onOpenProfileInfo(ProfileInfoType.NOTIFICATIONS) },
+            onDeviceSettings = { onOpenProfileInfo(ProfileInfoType.DEVICE_SETTINGS) },
+            onFeedback = { onOpenProfileInfo(ProfileInfoType.FEEDBACK) }
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
         AboutSection(
-            onAboutFlexFit = { showAboutDialog = true },
-            onRateApp = {
-                infoDialog = InfoDialogState(
-                    title = "Rate App",
-                    message = "Thanks for trying FlexFit. Store rating is not connected in the demo build yet, but this button is wired and ready for the release flow."
-                )
-            }
+            onAboutFlexFit = { onOpenProfileInfo(ProfileInfoType.ABOUT_FLEXFIT) },
+            onRateApp = { onOpenProfileInfo(ProfileInfoType.RATE_APP) }
         )
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -193,32 +160,6 @@ fun ProfileScreen() {
         )
     }
 
-    if (showEditProfileDialog) {
-        EditProfileDialog(
-            profile = profile,
-            onDismiss = { showEditProfileDialog = false },
-            onChooseAvatar = { setter ->
-                pendingAvatarSetter = setter
-                avatarPickerLauncher.launch(arrayOf("image/*"))
-            },
-            onSave = { name, email, avatarStyle, avatarUri ->
-                UserProfileRepository.updateProfile(name, email, avatarStyle, avatarUri)
-                showEditProfileDialog = false
-            }
-        )
-    }
-
-    if (showAboutDialog) {
-        AboutFlexFitDialog(onDismiss = { showAboutDialog = false })
-    }
-
-    infoDialog?.let { dialog ->
-        SimpleInfoDialog(
-            title = dialog.title,
-            message = dialog.message,
-            onDismiss = { infoDialog = null }
-        )
-    }
 }
 
 @Composable
@@ -946,6 +887,285 @@ private data class InfoDialogState(
     val title: String,
     val message: String
 )
+
+enum class ProfileInfoType(
+    val routeValue: String,
+    val pageTitle: String,
+    val body: String
+) {
+    NOTIFICATIONS(
+        routeValue = "notifications",
+        pageTitle = "Notifications",
+        body = "Workout reminders are ready for the demo profile. Full scheduling can be connected later from Android system notification settings."
+    ),
+    DEVICE_SETTINGS(
+        routeValue = "device_settings",
+        pageTitle = "Device Settings",
+        body = "FlexFit uses the phone camera, local video picker, on-device MediaPipe pose detection, and optional post-workout network access for AI Analysis."
+    ),
+    FEEDBACK(
+        routeValue = "feedback",
+        pageTitle = "Feedback",
+        body = "Send demo feedback to the FlexFit team with the exercise name, device model, and what happened during the session."
+    ),
+    ABOUT_FLEXFIT(
+        routeValue = "about_flexfit",
+        pageTitle = "About FlexFit",
+        body = "FlexFit is an AI fitness coaching demo that uses your phone camera or local workout videos to analyze Pull Up and Shoulder Press form.\n\nReal-time feedback is powered by on-device pose detection and local rule-based scoring for Depth, Alignment, and Stability.\n\nAfter a workout, FlexFit can optionally use DeepSeek-compatible AI Analysis for personalized coaching. The local demo path still works without network access."
+    ),
+    RATE_APP(
+        routeValue = "rate_app",
+        pageTitle = "Rate App",
+        body = "Thanks for trying FlexFit. Store rating is not connected in the demo build yet, but this page is wired and ready for the release flow."
+    );
+
+    companion object {
+        fun fromRouteValue(value: String?): ProfileInfoType {
+            return entries.firstOrNull { it.routeValue == value } ?: ABOUT_FLEXFIT
+        }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun EditProfileScreen(onNavigateBack: () -> Unit) {
+    val profile by UserProfileRepository.profile.collectAsState()
+    val context = LocalContext.current
+    var nameText by remember(profile.name) { mutableStateOf(profile.name) }
+    var emailText by remember(profile.email) { mutableStateOf(profile.email) }
+    var avatarStyle by remember(profile.avatarStyle) { mutableIntStateOf(profile.avatarStyle) }
+    var avatarUri by remember(profile.avatarUri) { mutableStateOf(profile.avatarUri) }
+
+    val avatarPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            avatarUri = uri.toString()
+        }
+    }
+
+    val nameValid = nameText.trim().length in 2..32
+    val emailValid = emailText.trim().let { "@" in it && "." in it && it.length <= 80 }
+
+    Scaffold(
+        topBar = {
+            ProfileTopBar(
+                title = "Edit Profile",
+                onNavigateBack = onNavigateBack
+            )
+        },
+        containerColor = LightBackground
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        AvatarCircle(
+                            name = nameText,
+                            avatarStyle = avatarStyle,
+                            avatarUri = avatarUri,
+                            size = 92
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = nameText,
+                        onValueChange = { nameText = it.take(32) },
+                        label = { Text("Nickname") },
+                        singleLine = true,
+                        isError = nameText.isNotBlank() && !nameValid,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = emailText,
+                        onValueChange = { emailText = it.take(80) },
+                        label = { Text("Email") },
+                        singleLine = true,
+                        isError = emailText.isNotBlank() && !emailValid,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(
+                        text = "Avatar",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { avatarPickerLauncher.launch(arrayOf("image/*")) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
+                        ) {
+                            Text("Choose Photo")
+                        }
+                        OutlinedButton(
+                            onClick = { avatarUri = null },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Remove")
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        repeat(UserProfileRepository.AVATAR_STYLE_COUNT) { index ->
+                            AvatarChoice(
+                                index = index,
+                                selected = avatarStyle == index,
+                                onClick = { avatarStyle = index },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    if (!nameValid || !emailValid) {
+                        Text(
+                            text = "Use a nickname with 2-32 characters and a valid email address.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = ErrorRed
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            UserProfileRepository.updateProfile(nameText, emailText, avatarStyle, avatarUri)
+                            onNavigateBack()
+                        },
+                        enabled = nameValid && emailValid,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
+                    ) {
+                        Text("Save")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun ProfileInfoScreen(
+    type: ProfileInfoType,
+    onNavigateBack: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            ProfileTopBar(
+                title = type.pageTitle,
+                onNavigateBack = onNavigateBack
+            )
+        },
+        containerColor = LightBackground
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = when (type) {
+                            ProfileInfoType.ABOUT_FLEXFIT -> Icons.Default.FitnessCenter
+                            ProfileInfoType.RATE_APP -> Icons.Default.Star
+                            ProfileInfoType.FEEDBACK -> Icons.Default.Mail
+                            ProfileInfoType.NOTIFICATIONS -> Icons.Default.Notifications
+                            ProfileInfoType.DEVICE_SETTINGS -> Icons.Default.Settings
+                        },
+                        contentDescription = null,
+                        tint = DeepPurple,
+                        modifier = Modifier.size(34.dp)
+                    )
+                    Text(
+                        text = type.pageTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = type.body,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary,
+                        textAlign = TextAlign.Start
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileTopBar(
+    title: String,
+    onNavigateBack: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Text(
+                text = title,
+                color = TextPrimary,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onNavigateBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = TextPrimary
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = LightBackground)
+    )
+}
 
 private fun Float.formatNumber(): String {
     return if (this % 1f == 0f) {

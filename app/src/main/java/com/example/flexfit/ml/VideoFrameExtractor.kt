@@ -256,7 +256,7 @@ class VideoFrameExtractor(
 
         /**
          * Default target height for extracted frames.
-         * 480px is sufficient for ML Kit pose detection while keeping memory usage low.
+     * 480px is sufficient for MediaPipe pose detection while keeping memory usage low.
          */
         const val DEFAULT_TARGET_HEIGHT = 480
 

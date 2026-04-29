@@ -8,36 +8,34 @@ import org.junit.Test
 class ShoulderPressAnalyzerTest {
 
     @Test
-    fun rackPose_confirmsStartingPosition() {
+    fun startPose_confirmsStartingPosition() {
         val analyzer = ShoulderPressAnalyzer()
 
-        val result = analyzer.analyze(rackPose(), timestamp = 1L)
+        val result = analyzer.analyze(startPose(), timestamp = 1L)
 
         assertEquals(true, result.isReady)
-        assertEquals("shoulder_press_rack", result.phase.key)
+        assertEquals("shoulder_press_down", result.phase.key)
         assertEquals(0, result.count)
         assertEquals(FeedbackType.SUCCESS, result.feedback?.type)
-        assertEquals(VoiceAction.START, result.voiceAction)
+        assertEquals(VoiceAction.SHP_START, result.voiceAction)
     }
 
     @Test
     fun completeShoulderPressSequence_countsOneRep() {
         val analyzer = ShoulderPressAnalyzer()
 
-        analyzer.analyze(rackPose(), timestamp = 1L)
+        analyzer.analyze(startPose(), timestamp = 1L)
         val pressing = analyzer.analyze(pressingPose(), timestamp = 2L)
-        val lockout = analyzer.analyze(lockoutPose(), timestamp = 3L)
-        val returning = analyzer.analyze(returningPose(), timestamp = 4L)
-        val completed = analyzer.analyze(rackPose(), timestamp = 5L)
+        val top = analyzer.analyze(lockoutPose(), timestamp = 3L)
+        val completed = analyzer.analyze(startPose(), timestamp = 4L)
 
-        assertEquals("shoulder_press_pressing", pressing.phase.key)
-        assertEquals("shoulder_press_lockout", lockout.phase.key)
-        assertEquals("shoulder_press_returning", returning.phase.key)
-        assertEquals("shoulder_press_rack", completed.phase.key)
+        assertEquals("shoulder_press_up", pressing.phase.key)
+        assertEquals("shoulder_press_top", top.phase.key)
+        assertEquals("shoulder_press_down", completed.phase.key)
         assertEquals(1, completed.count)
         assertEquals(1, completed.attemptedReps)
         assertEquals(FeedbackType.SUCCESS, completed.feedback?.type)
-        assertEquals(VoiceAction.SUCCESS, completed.voiceAction)
+        assertEquals(VoiceAction.SHP_SUCCESS, completed.voiceAction)
         assertTrue(completed.scores.depth > 0f)
         assertTrue(completed.scores.alignment > 0f)
         assertTrue(completed.scores.stability > 0f)
@@ -58,103 +56,113 @@ class ShoulderPressAnalyzerTest {
     }
 
     @Test
-    fun incompleteRange_doesNotCountAndReportsRangeOfMotion() {
+    fun incompleteLockout_doesNotCountAndReportsHeightError() {
         val analyzer = ShoulderPressAnalyzer()
 
-        analyzer.analyze(rackPose(), timestamp = 1L)
+        analyzer.analyze(startPose(), timestamp = 1L)
         analyzer.analyze(pressingPose(), timestamp = 2L)
-        val completed = analyzer.analyze(rackPose(), timestamp = 3L)
+        val completed = analyzer.analyze(startPose(), timestamp = 3L)
 
         assertEquals(0, completed.count)
         assertEquals(1, completed.attemptedReps)
         assertEquals(FeedbackType.ERROR, completed.feedback?.type)
-        assertEquals("range_of_motion", completed.issues.first().key)
-        assertEquals(VoiceAction.FAIL, completed.voiceAction)
+        assertEquals("not_high", completed.issues.first().key)
+        assertEquals(VoiceAction.SHP_FAIL, completed.voiceAction)
     }
 
     @Test
-    fun leftRightImbalance_emitsWarningAndBlocksRep() {
+    fun elbowFlareFrames_emitWarning() {
         val analyzer = ShoulderPressAnalyzer()
+        analyzer.analyze(startPose(), timestamp = 1L)
 
-        analyzer.analyze(rackPose(), timestamp = 1L)
-        val warning = analyzer.analyze(imbalancedPressingPose(), timestamp = 2L)
+        var warningResult: ExerciseAnalysisResult? = null
+        for (frame in 2L..8L) {
+            val result = analyzer.analyze(flaredPressingPose(), timestamp = frame)
+            if (result.feedback?.type == FeedbackType.WARNING) {
+                warningResult = result
+            }
+        }
+
+        val warning = requireNotNull(warningResult)
+        assertEquals("elbow_flare", warning.issues.first().key)
+    }
+
+    @Test
+    fun bodyLeanFrames_emitWarning() {
+        val analyzer = ShoulderPressAnalyzer()
+        analyzer.analyze(startPose(), timestamp = 1L)
+
+        var warningResult: ExerciseAnalysisResult? = null
+        for (frame in 2L..8L) {
+            val result = analyzer.analyze(leaningPressingPose(), timestamp = frame)
+            if (result.feedback?.type == FeedbackType.WARNING) {
+                warningResult = result
+            }
+        }
+
+        val warning = requireNotNull(warningResult)
+        assertEquals("body_lean", warning.issues.first().key)
+    }
+
+    @Test
+    fun shruggingAtTop_emitWarning() {
+        val analyzer = ShoulderPressAnalyzer()
+        analyzer.analyze(startPose(), timestamp = 1L)
+        analyzer.analyze(pressingPose(), timestamp = 2L)
         analyzer.analyze(lockoutPose(), timestamp = 3L)
-        analyzer.analyze(returningPose(), timestamp = 4L)
-        val completed = analyzer.analyze(rackPose(), timestamp = 5L)
 
-        assertEquals(FeedbackType.WARNING, warning.feedback?.type)
-        assertEquals("left_right_imbalance", warning.issues.first().key)
-        assertEquals(0, completed.count)
-        assertEquals(1, completed.attemptedReps)
+        var warningResult: ExerciseAnalysisResult? = null
+        for (frame in 4L..10L) {
+            val result = analyzer.analyze(shruggingLockoutPose(), timestamp = frame)
+            if (result.feedback?.type == FeedbackType.WARNING) {
+                warningResult = result
+            }
+        }
+
+        val warning = requireNotNull(warningResult)
+        assertEquals("shrugging", warning.issues.first().key)
+        assertEquals(VoiceAction.SHP_SHRUGGING, warning.voiceAction)
     }
 
-    @Test
-    fun trunkLean_emitsWarningAndBlocksRep() {
-        val analyzer = ShoulderPressAnalyzer()
-
-        analyzer.analyze(rackPose(), timestamp = 1L)
-        val warning = analyzer.analyze(pressingPose(hipShiftX = 0.24f), timestamp = 2L)
-        analyzer.analyze(lockoutPose(), timestamp = 3L)
-        analyzer.analyze(returningPose(), timestamp = 4L)
-        val completed = analyzer.analyze(rackPose(), timestamp = 5L)
-
-        assertEquals(FeedbackType.WARNING, warning.feedback?.type)
-        assertEquals("trunk_lean", warning.issues.first().key)
-        assertEquals(0, completed.count)
-    }
-
-    @Test
-    fun shoulderInstability_emitsWarning() {
-        val analyzer = ShoulderPressAnalyzer()
-
-        analyzer.analyze(rackPose(), timestamp = 1L)
-        val warning = analyzer.analyze(pressingPose(leftShoulderY = 0.42f, rightShoulderY = 0.28f), timestamp = 2L)
-
-        assertEquals(FeedbackType.WARNING, warning.feedback?.type)
-        assertEquals("shoulder_instability", warning.issues.first().key)
-    }
-
-    private fun rackPose(): FloatArray = basePose(
-        leftElbow = Point(-0.36f, 0.22f),
-        rightElbow = Point(0.36f, 0.22f),
-        leftWrist = Point(-0.28f, 0.43f),
-        rightWrist = Point(0.28f, 0.43f)
+    private fun startPose(): FloatArray = basePose(
+        leftElbow = Point(-0.32f, 0.28f),
+        rightElbow = Point(0.32f, 0.28f),
+        leftWrist = Point(-0.32f, 0.48f),
+        rightWrist = Point(0.32f, 0.48f)
     )
 
-    private fun pressingPose(
-        hipShiftX: Float = 0f,
-        leftShoulderY: Float = 0.28f,
-        rightShoulderY: Float = 0.28f
-    ): FloatArray = basePose(
-        leftShoulder = Point(-0.18f, leftShoulderY),
-        rightShoulder = Point(0.18f, rightShoulderY),
+    private fun pressingPose(): FloatArray = basePose(
         leftElbow = Point(-0.32f, 0.52f),
         rightElbow = Point(0.32f, 0.52f),
         leftWrist = Point(-0.26f, 0.72f),
-        rightWrist = Point(0.26f, 0.72f),
-        hipShiftX = hipShiftX
+        rightWrist = Point(0.26f, 0.72f)
     )
 
-    private fun imbalancedPressingPose(): FloatArray = basePose(
-        leftElbow = Point(-0.32f, 0.52f),
-        rightElbow = Point(0.32f, 0.46f),
-        leftWrist = Point(-0.26f, 0.78f),
-        rightWrist = Point(0.26f, 0.62f)
+    private fun flaredPressingPose(): FloatArray = basePose(
+        leftElbow = Point(-0.40f, 0.52f),
+        rightElbow = Point(0.40f, 0.52f),
+        leftWrist = Point(-0.30f, 0.72f),
+        rightWrist = Point(0.30f, 0.72f)
     )
 
     private fun lockoutPose(): FloatArray = basePose(
-        leftElbow = Point(-0.22f, 0.62f),
-        rightElbow = Point(0.22f, 0.62f),
-        leftWrist = Point(-0.24f, 0.96f),
-        rightWrist = Point(0.24f, 0.96f)
+        leftElbow = Point(-0.24f, 0.72f),
+        rightElbow = Point(0.24f, 0.72f),
+        leftWrist = Point(-0.22f, 1.04f),
+        rightWrist = Point(0.22f, 1.04f)
     )
 
-    private fun returningPose(): FloatArray = basePose(
-        leftElbow = Point(-0.30f, 0.44f),
-        rightElbow = Point(0.30f, 0.44f),
-        leftWrist = Point(-0.26f, 0.64f),
-        rightWrist = Point(0.26f, 0.64f)
-    )
+    private fun shruggingLockoutPose(): FloatArray = lockoutPose().apply {
+        setPoint(7, -0.08f, 0.44f)
+        setPoint(8, 0.08f, 0.44f)
+    }
+
+    private fun leaningPressingPose(): FloatArray = pressingPose().apply {
+        setPoint(7, -0.08f, 1.02f)
+        setPoint(8, 0.08f, 1.02f)
+        setPoint(23, -0.13f, -0.28f)
+        setPoint(24, 0.13f, -0.02f)
+    }
 
     private fun basePose(
         leftShoulder: Point = Point(-0.18f, 0.28f),
@@ -162,18 +170,19 @@ class ShoulderPressAnalyzerTest {
         leftElbow: Point,
         rightElbow: Point,
         leftWrist: Point,
-        rightWrist: Point,
-        hipShiftX: Float = 0f
+        rightWrist: Point
     ): FloatArray = PoseKeypoints.empty().apply {
-        setPoint(0, 0f, 0.78f)
+        setPoint(0, 0f, 0.82f)
+        setPoint(7, -0.08f, 0.78f)
+        setPoint(8, 0.08f, 0.78f)
         setPoint(11, leftShoulder.x, leftShoulder.y)
         setPoint(12, rightShoulder.x, rightShoulder.y)
         setPoint(13, leftElbow.x, leftElbow.y)
         setPoint(14, rightElbow.x, rightElbow.y)
         setPoint(15, leftWrist.x, leftWrist.y)
         setPoint(16, rightWrist.x, rightWrist.y)
-        setPoint(23, -0.13f + hipShiftX, -0.16f)
-        setPoint(24, 0.13f + hipShiftX, -0.16f)
+        setPoint(23, -0.13f, -0.16f)
+        setPoint(24, 0.13f, -0.16f)
     }
 
     private fun FloatArray.setPoint(index: Int, x: Float, y: Float, z: Float = 0f) {

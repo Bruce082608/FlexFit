@@ -64,7 +64,6 @@ interface ExerciseAnalyzer {
 class PlaceholderPoseDetectionAlgorithm : PoseDetectionAlgorithm {
     override suspend fun initialize() {
         // TODO: Initialize MediaPipe PoseLandmarker
-        // TODO: Add dependency: implementation("com.google.mediapipe:mediapipe-pose:0.10.14")
     }
 
     override fun processFrame(bitmap: android.graphics.Bitmap): DetectedPose? {

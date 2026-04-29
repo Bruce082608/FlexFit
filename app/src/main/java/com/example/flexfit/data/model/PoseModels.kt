@@ -7,7 +7,7 @@ package com.example.flexfit.data.model
  * Reference: https://google.github.io/mediapipe/solutions/pose
  *
  * TODO: When integrating MediaPipe, add dependency:
- *       implementation("com.google.mediapipe:mediapipe-pose:0.10.14")
+ *       implementation("com.google.mediapipe:tasks-vision")
  */
 object PoseLandmarkMapping {
     const val NOSE = 0

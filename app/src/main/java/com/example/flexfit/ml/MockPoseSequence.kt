@@ -44,12 +44,14 @@ object MockPoseSequence {
     private fun shoulderPressPose(progress: Float): FloatArray {
         val keypoints = PoseKeypoints.empty()
         val shoulderY = 0.28f
-        val elbowY = lerp(0.22f, 0.62f, progress)
-        val wristY = lerp(0.43f, 0.96f, progress)
-        val elbowX = lerp(0.36f, 0.22f, progress)
-        val wristX = lerp(0.28f, 0.24f, progress)
+        val elbowY = lerp(0.28f, 0.72f, progress)
+        val wristY = lerp(0.48f, 1.04f, progress)
+        val elbowX = lerp(0.32f, 0.24f, progress)
+        val wristX = lerp(0.32f, 0.22f, progress)
 
-        PoseKeypoints.set(keypoints, 0, 0f, 0.78f)
+        PoseKeypoints.set(keypoints, 0, 0f, 0.82f)
+        PoseKeypoints.set(keypoints, 7, -0.08f, 0.78f)
+        PoseKeypoints.set(keypoints, 8, 0.08f, 0.78f)
         PoseKeypoints.set(keypoints, 11, -0.18f, shoulderY)
         PoseKeypoints.set(keypoints, 12, 0.18f, shoulderY)
         PoseKeypoints.set(keypoints, 13, -elbowX, elbowY)
