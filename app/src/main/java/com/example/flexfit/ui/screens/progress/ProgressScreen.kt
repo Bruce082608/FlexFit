@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.dp
 import com.example.flexfit.data.model.WorkoutRecord
 import com.example.flexfit.data.model.WorkoutStats
 import com.example.flexfit.data.repository.WorkoutRecordRepository
+import com.example.flexfit.ui.i18n.LocalAppLanguage
+import com.example.flexfit.ui.i18n.l10n
+import com.example.flexfit.ui.i18n.workoutName
 import com.example.flexfit.ui.theme.*
 
 @Composable
@@ -54,11 +57,13 @@ fun ProgressScreen() {
             .fillMaxSize()
             .background(LightBackground)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp)
+            .padding(top = 16.dp, bottom = 112.dp)
     ) {
         // Header
         Text(
-            text = "Progress",
+            text = l10n("Progress"),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = TextPrimary
@@ -117,6 +122,7 @@ private fun WorkoutRecordsSection(
     onClearAll: () -> Unit
 ) {
     var showClearDialog by remember { mutableStateOf(false) }
+    val appLanguage = LocalAppLanguage.current
 
     Column {
         Row(
@@ -125,21 +131,21 @@ private fun WorkoutRecordsSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Training History",
+                text = l10n("Training History"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "${records.size} sessions",
+                    text = appLanguage.text("${records.size} sessions", "${records.size} 次训练"),
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
                 if (allRecords.isNotEmpty()) {
                     Spacer(modifier = Modifier.width(8.dp))
                     TextButton(onClick = { showClearDialog = true }) {
-                        Text("Clear", color = ErrorRed)
+                        Text(l10n("Clear"), color = ErrorRed)
                     }
                 }
             }
@@ -156,7 +162,9 @@ private fun WorkoutRecordsSection(
                     FilterChip(
                         selected = selectedExercise == filter,
                         onClick = { onFilterSelected(filter) },
-                        label = { Text(filter) }
+                        label = {
+                            Text(if (filter == ALL_EXERCISES_FILTER) l10n("All") else appLanguage.workoutName(filter))
+                        }
                     )
                 }
             }
@@ -184,15 +192,15 @@ private fun WorkoutRecordsSection(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = if (allRecords.isEmpty()) "No workouts yet" else "No matching workouts",
+                        text = if (allRecords.isEmpty()) l10n("No workouts yet") else l10n("No matching workouts"),
                         style = MaterialTheme.typography.bodyLarge,
                         color = TextSecondary
                     )
                     Text(
                         text = if (allRecords.isEmpty()) {
-                            "Complete a workout to see your history"
+                            l10n("Complete a workout to see your history")
                         } else {
-                            "Choose another exercise filter"
+                            l10n("Choose another exercise filter")
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary
@@ -210,8 +218,8 @@ private fun WorkoutRecordsSection(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear training history?") },
-            text = { Text("This removes all saved workout records from this device.") },
+            title = { Text(l10n("Clear training history?")) },
+            text = { Text(l10n("This removes all saved workout records from this device.")) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -219,12 +227,12 @@ private fun WorkoutRecordsSection(
                         onClearAll()
                     }
                 ) {
-                    Text("Clear", color = ErrorRed)
+                    Text(l10n("Clear"), color = ErrorRed)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
-                    Text("Cancel")
+                    Text(l10n("Cancel"))
                 }
             }
         )
@@ -233,6 +241,7 @@ private fun WorkoutRecordsSection(
 
 @Composable
 private fun WorkoutRecordItem(record: WorkoutRecord) {
+    val appLanguage = LocalAppLanguage.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -267,7 +276,7 @@ private fun WorkoutRecordItem(record: WorkoutRecord) {
 
                 Column {
                     Text(
-                        text = record.exerciseType,
+                        text = appLanguage.workoutName(record.exerciseType),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary
@@ -286,7 +295,7 @@ private fun WorkoutRecordItem(record: WorkoutRecord) {
             ) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "${record.completedReps} reps",
+                        text = appLanguage.text("${record.completedReps} reps", "${record.completedReps} 次"),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = TextPrimary
@@ -337,14 +346,14 @@ private fun StatsCardsRow(
     ) {
         StatCard(
             icon = Icons.Default.SportsScore,
-            title = "Total Workouts",
+            title = l10n("Total Workouts"),
             value = stats.totalWorkouts.toString(),
             color = DeepPurple,
             modifier = Modifier.weight(1f)
         )
         StatCard(
             icon = Icons.Default.Schedule,
-            title = "Total Minutes",
+            title = l10n("Total Minutes"),
             value = stats.totalMinutes.toString(),
             color = AccentPurple,
             modifier = Modifier.weight(1f)
@@ -359,14 +368,14 @@ private fun StatsCardsRow(
     ) {
         StatCard(
             icon = Icons.Default.TrendingUp,
-            title = "Avg Accuracy",
+            title = l10n("Avg Accuracy"),
             value = "${stats.averageAccuracy.toInt()}%",
             color = SuccessGreen,
             modifier = Modifier.weight(1f)
         )
         StatCard(
             icon = Icons.Default.LocalFireDepartment,
-            title = "Streak Days",
+            title = l10n("Streak Days"),
             value = stats.currentStreak.toString(),
             color = WarningOrange,
             modifier = Modifier.weight(1f)
@@ -429,7 +438,11 @@ private fun WeeklyTrainingChart(records: List<WorkoutRecord>) {
     val oneDayMs = 24 * 60 * 60 * 1000L
     val today = System.currentTimeMillis()
     val weekData = mutableListOf<Int>()
-    val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    val appLanguage = LocalAppLanguage.current
+    val days = appLanguage.text(
+        "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+        "周一,周二,周三,周四,周五,周六,周日"
+    ).split(",")
 
     for (i in 6 downTo 0) {
         val dayStart = (today - i * oneDayMs) / oneDayMs
@@ -453,14 +466,14 @@ private fun WeeklyTrainingChart(records: List<WorkoutRecord>) {
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "Weekly Training",
+                text = l10n("Weekly Training"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
 
             Text(
-                text = "Number of workouts per day",
+                text = l10n("Number of workouts per day"),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary
             )
@@ -510,6 +523,7 @@ private fun WeeklyTrainingChart(records: List<WorkoutRecord>) {
 private fun AccuracyTrendChart(records: List<WorkoutRecord>) {
     val accuracyData = records.take(7).map { it.averageAccuracy }.reversed()
     val avgAccuracy = if (accuracyData.isNotEmpty()) accuracyData.average().toFloat() else 0f
+    val appLanguage = LocalAppLanguage.current
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -521,14 +535,14 @@ private fun AccuracyTrendChart(records: List<WorkoutRecord>) {
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "Accuracy Trend",
+                text = l10n("Accuracy Trend"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
 
             Text(
-                text = "Your accuracy over the past 7 sessions",
+                text = l10n("Your accuracy over the past 7 sessions"),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary
             )
@@ -536,7 +550,7 @@ private fun AccuracyTrendChart(records: List<WorkoutRecord>) {
             Spacer(modifier = Modifier.height(20.dp))
 
             if (accuracyData.isEmpty()) {
-                EmptyCardMessage(text = "Complete workouts to see your accuracy trend.")
+                EmptyCardMessage(text = l10n("Complete workouts to see your accuracy trend."))
             } else {
                 Box(
                     modifier = Modifier
@@ -602,7 +616,7 @@ private fun AccuracyTrendChart(records: List<WorkoutRecord>) {
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "Avg: ${avgAccuracy.toInt()}%",
+                        text = appLanguage.text("Avg: ${avgAccuracy.toInt()}%", "平均：${avgAccuracy.toInt()}%"),
                         style = MaterialTheme.typography.bodySmall,
                         color = SuccessGreen,
                         fontWeight = FontWeight.SemiBold
@@ -632,14 +646,14 @@ private fun ExerciseDistribution(records: List<WorkoutRecord>) {
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "Exercise Distribution",
+                text = l10n("Exercise Distribution"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
 
             Text(
-                text = "Time spent on each exercise type",
+                text = l10n("Time spent on each exercise type"),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary
             )
@@ -647,7 +661,7 @@ private fun ExerciseDistribution(records: List<WorkoutRecord>) {
             Spacer(modifier = Modifier.height(20.dp))
 
             if (exerciseCounts.isEmpty()) {
-                EmptyCardMessage(text = "Complete workouts to see exercise distribution.")
+                EmptyCardMessage(text = l10n("Complete workouts to see exercise distribution."))
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -725,6 +739,7 @@ private fun LegendItem(
     label: String,
     percentage: String
 ) {
+    val appLanguage = LocalAppLanguage.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(vertical = 4.dp)
@@ -736,7 +751,7 @@ private fun LegendItem(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = label,
+            text = appLanguage.workoutName(label),
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary
         )
@@ -775,7 +790,7 @@ private fun TipsSection(records: List<WorkoutRecord>) {
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "AI Training Tips",
+                text = l10n("AI Training Tips"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = DeepPurple
@@ -785,9 +800,9 @@ private fun TipsSection(records: List<WorkoutRecord>) {
 
             Text(
                 text = if (records.isEmpty()) {
-                    "Complete a workout to generate personalized suggestions."
+                    l10n("Complete a workout to generate personalized suggestions.")
                 } else {
-                    "Based on your recent training data, here are some personalized suggestions:"
+                    l10n("Based on your recent training data, here are some personalized suggestions:")
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
@@ -796,10 +811,10 @@ private fun TipsSection(records: List<WorkoutRecord>) {
             Spacer(modifier = Modifier.height(12.dp))
 
             if (records.isEmpty()) {
-                EmptyCardMessage(text = "Complete a workout to generate personalized suggestions.")
+                EmptyCardMessage(text = l10n("Complete a workout to generate personalized suggestions."))
             } else if (tips.isEmpty()) {
                 TipItem(
-                    tip = "No major issues detected. Keep your current form.",
+                    tip = l10n("No major issues detected. Keep your current form."),
                     icon = "1"
                 )
             } else {

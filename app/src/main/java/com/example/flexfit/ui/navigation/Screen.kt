@@ -61,6 +61,13 @@ sealed class Screen(
         fun createRoute(type: String) = "profile_info/$type"
     }
 
+    data object BodyCalibration : Screen(
+        route = "body_calibration",
+        title = "Custom Body Data",
+        selectedIcon = Icons.Filled.Person,
+        unselectedIcon = Icons.Outlined.Person
+    )
+
     data object WorkoutSetup : Screen(
         route = "workout_setup/{exerciseType}",
         title = "Workout Setup",

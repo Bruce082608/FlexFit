@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +34,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.flexfit.data.model.ExerciseType
+import com.example.flexfit.ui.i18n.LocalAppLanguage
+import com.example.flexfit.ui.i18n.exerciseDescription
+import com.example.flexfit.ui.i18n.exerciseName
+import com.example.flexfit.ui.i18n.l10n
 import com.example.flexfit.ui.theme.AccentPurple
 import com.example.flexfit.ui.theme.DeepPurple
 import com.example.flexfit.ui.theme.LightBackground
@@ -44,6 +49,8 @@ import com.example.flexfit.ui.theme.TextTertiary
 
 @Composable
 fun WorkoutScreen(
+    isBodyCalibrated: Boolean = true,
+    onOpenBodyCalibration: () -> Unit = {},
     onOpenExerciseSetup: (ExerciseType) -> Unit
 ) {
     Column(
@@ -51,22 +58,29 @@ fun WorkoutScreen(
             .fillMaxSize()
             .background(LightBackground)
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp)
+            .padding(top = 16.dp, bottom = 112.dp)
     ) {
         Text(
-            text = "Workout",
+            text = l10n("Workout"),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = TextPrimary
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Pick a movement, then choose camera or video analysis.",
+            text = l10n("Pick a movement, then choose camera or video analysis."),
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary
         )
 
         Spacer(modifier = Modifier.height(20.dp))
+
+        if (!isBodyCalibrated) {
+            BodyCalibrationGuideCard(onClick = onOpenBodyCalibration)
+            Spacer(modifier = Modifier.height(14.dp))
+        }
 
         ExerciseType.entries.forEach { exercise ->
             ExerciseSelectionCard(
@@ -76,7 +90,64 @@ fun WorkoutScreen(
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun BodyCalibrationGuideCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = DeepPurple),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .background(Color.White.copy(alpha = 0.16f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FitnessCenter,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = l10n("Custom Body Data Required", "需要先定制化身材数据"),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = l10n(
+                        "Upload a front full-body photo so FlexFit can generate body ratio coefficients before training.",
+                        "请先上传正面全身照，生成身体比例系数后再开始训练。"
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.78f)
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+        }
     }
 }
 
@@ -85,6 +156,7 @@ private fun ExerciseSelectionCard(
     exercise: ExerciseType,
     onClick: () -> Unit
 ) {
+    val appLanguage = LocalAppLanguage.current
     val isAvailable = exercise.isImplemented
     val accentColor = if (isAvailable) DeepPurple else TextTertiary
 
@@ -129,7 +201,7 @@ private fun ExerciseSelectionCard(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = exercise.displayName,
+                        text = appLanguage.exerciseName(exercise),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = if (isAvailable) TextPrimary else TextTertiary
@@ -140,7 +212,7 @@ private fun ExerciseSelectionCard(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = exercise.description,
+                    text = appLanguage.exerciseDescription(exercise),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isAvailable) TextSecondary else TextTertiary
                 )
@@ -170,7 +242,7 @@ private fun StatusLabel(isAvailable: Boolean) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = if (isAvailable) "Available" else "Coming soon",
+            text = if (isAvailable) l10n("Available") else l10n("Coming soon"),
             style = MaterialTheme.typography.labelSmall,
             color = if (isAvailable) AccentPurple else TextTertiary,
             fontWeight = FontWeight.SemiBold,

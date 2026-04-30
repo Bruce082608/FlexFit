@@ -53,20 +53,23 @@ class LlmAnalysisRepository private constructor(private val context: Context) {
         }
     }
 
-    fun requestAnalysis(stats: LlmWorkoutStats) {
+    fun requestAnalysis(
+        stats: LlmWorkoutStats,
+        responseLanguage: LlmResponseLanguage = LlmResponseLanguage.ENGLISH
+    ) {
         _analysisState.value = LlmAnalysisState.Loading
 
         cacheScope.launch {
             val apiKey = BuildConfig.LLM_API_KEY
 
             if (apiKey.isBlank() || apiKey in placeholderApiKeys) {
-                val fallback = generateLocalAnalysis(stats)
+                val fallback = generateLocalAnalysis(stats, responseLanguage)
                 _analysisState.value = LlmAnalysisState.Success(fallback)
                 return@launch
             }
 
             try {
-                val request = LlmPromptBuilder.buildRequest(stats)
+                val request = LlmPromptBuilder.buildRequest(stats, responseLanguage)
                 val auth = "Bearer $apiKey"
                 val response = apiService.chatCompletion(auth, request)
 
@@ -75,31 +78,31 @@ class LlmAnalysisRepository private constructor(private val context: Context) {
                     if (content != null) {
                         val parsed = LlmAnalysisInterpreter.parseStructuredResponse(content)
                         if (parsed != null) {
-                            cacheResult(stats.exerciseType, content)
+                            cacheResult(stats.exerciseType, responseLanguage, content)
                             _analysisState.value = LlmAnalysisState.Success(
                                 parsed.copy(source = AnalysisSource.LLM)
                             )
                         } else {
-                            val fallback = generateLocalAnalysis(stats)
+                            val fallback = generateLocalAnalysis(stats, responseLanguage)
                             _analysisState.value = LlmAnalysisState.Error(
                                 "Failed to parse LLM response",
                                 fallback
                             )
                         }
                     } else {
-                        val fallback = generateLocalAnalysis(stats)
+                        val fallback = generateLocalAnalysis(stats, responseLanguage)
                         _analysisState.value = LlmAnalysisState.Error(
                             "Empty response from LLM",
                             fallback
                         )
                     }
                 } else {
-                    val fallback = generateLocalAnalysis(stats)
+                    val fallback = generateLocalAnalysis(stats, responseLanguage)
                     val errorMsg = "API error: ${response.code()} ${response.message()}"
                     _analysisState.value = LlmAnalysisState.Error(errorMsg, fallback)
                 }
             } catch (e: Exception) {
-                val fallback = generateLocalAnalysis(stats)
+                val fallback = generateLocalAnalysis(stats, responseLanguage)
                 _analysisState.value = LlmAnalysisState.Error(
                     "Network error: ${e.localizedMessage ?: "Unknown error"}",
                     fallback
@@ -108,36 +111,49 @@ class LlmAnalysisRepository private constructor(private val context: Context) {
         }
     }
 
-    fun retryLastAnalysis(stats: LlmWorkoutStats) {
-        requestAnalysis(stats)
+    fun retryLastAnalysis(
+        stats: LlmWorkoutStats,
+        responseLanguage: LlmResponseLanguage = LlmResponseLanguage.ENGLISH
+    ) {
+        requestAnalysis(stats, responseLanguage)
     }
 
     fun clearState() {
         _analysisState.value = LlmAnalysisState.Idle
     }
 
-    private suspend fun generateLocalAnalysis(stats: LlmWorkoutStats): WorkoutAnalysisResult {
-        val cached = loadCachedAnalysis(stats.exerciseType)
+    private suspend fun generateLocalAnalysis(
+        stats: LlmWorkoutStats,
+        responseLanguage: LlmResponseLanguage
+    ): WorkoutAnalysisResult {
+        val cached = loadCachedAnalysis(stats.exerciseType, responseLanguage)
         if (cached != null) {
             return cached
         }
 
-        return LlmAnalysisInterpreter.localFallback(stats)
+        return LlmAnalysisInterpreter.localFallback(stats, responseLanguage)
     }
 
-    private suspend fun cacheResult(exerciseType: String, jsonContent: String) {
+    private suspend fun cacheResult(
+        exerciseType: String,
+        responseLanguage: LlmResponseLanguage,
+        jsonContent: String
+    ) {
         cacheScope.launch {
             cacheDataStore.edit { prefs ->
-                prefs[stringPreferencesKey("analysis_$exerciseType")] = jsonContent
-                prefs[longPreferencesKey("analysis_${exerciseType}_time")] = System.currentTimeMillis()
+                prefs[stringPreferencesKey("analysis_${exerciseType}_${responseLanguage.cacheKey}")] = jsonContent
+                prefs[longPreferencesKey("analysis_${exerciseType}_${responseLanguage.cacheKey}_time")] = System.currentTimeMillis()
             }
         }
     }
 
-    private suspend fun loadCachedAnalysis(exerciseType: String): WorkoutAnalysisResult? {
+    private suspend fun loadCachedAnalysis(
+        exerciseType: String,
+        responseLanguage: LlmResponseLanguage
+    ): WorkoutAnalysisResult? {
         val prefs = cacheDataStore.data.first()
-        val cached = prefs[stringPreferencesKey("analysis_$exerciseType")]
-        val cachedTime = prefs[longPreferencesKey("analysis_${exerciseType}_time")] ?: 0L
+        val cached = prefs[stringPreferencesKey("analysis_${exerciseType}_${responseLanguage.cacheKey}")]
+        val cachedTime = prefs[longPreferencesKey("analysis_${exerciseType}_${responseLanguage.cacheKey}_time")] ?: 0L
 
         if (cached == null) return null
 

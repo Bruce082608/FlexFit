@@ -1,5 +1,6 @@
 package com.example.flexfit.ml
 
+import com.example.flexfit.data.model.BodyProportions
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.atan2
@@ -31,7 +32,10 @@ enum class PullUpState {
 typealias PullUpFeedback = ExerciseFeedback
 typealias PullUpAnalysisResult = ExerciseAnalysisResult
 
-class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
+class PullUpAnalyzer(
+    private val pullUpType: PullUpType,
+    private val bodyProportions: BodyProportions? = null
+) : ExerciseAnalyzer {
     override val exerciseName: String = "${pullUpType.displayName} Pull-up"
 
     private var state: PullUpState = PullUpState.PREPARING
@@ -39,11 +43,9 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
     private var attemptedReps = 0
     private var isReady = false
     private var validTop = false
-    private var currentRepBlocked = false
     private var maxHeightRatio = Float.NEGATIVE_INFINITY
     private var minElbowAngle = Float.POSITIVE_INFINITY
     private var prevMetrics: PullUpMetrics? = null
-    private var calibratedEarShoulderHipRatio: Float? = null
     private var lastHint: String? = null
     private var hintCooldown = 0
     private var pendingVoiceAction: VoiceAction? = null
@@ -98,11 +100,9 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
         attemptedReps = 0
         isReady = false
         validTop = false
-        currentRepBlocked = false
         maxHeightRatio = Float.NEGATIVE_INFINITY
         minElbowAngle = Float.POSITIVE_INFINITY
         prevMetrics = null
-        calibratedEarShoulderHipRatio = null
         lastHint = null
         hintCooldown = 0
         pendingVoiceAction = null
@@ -148,12 +148,11 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
 
             state == PullUpState.UP && metrics.isTopPosition -> {
                 state = PullUpState.TOP
-                validTop = true
+                validTop = !metrics.isNotHighEnough
                 null
             }
 
             state == PullUpState.UP && metrics.isNearTopButLow -> {
-                currentRepBlocked = true
                 val feedback = emitIssue(PullUpIssue.NOT_HIGH, issues, requireConfirmation = true)
                 if (feedback != null) {
                     pendingVoiceAction = VoiceAction.NOT_HIGH
@@ -180,7 +179,6 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
         if (state != PullUpState.UP && state != PullUpState.TOP) return null
 
         val swingFeedback = if (metrics.isSwinging) {
-            currentRepBlocked = true
             val feedback = emitIssue(PullUpIssue.SWINGING, issues, requireConfirmation = true)
             if (feedback != null) {
                 pendingVoiceAction = VoiceAction.SWINGING
@@ -192,7 +190,6 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
         }
 
         val shrugFeedback = if (metrics.isShrugging) {
-            currentRepBlocked = true
             val feedback = emitIssue(PullUpIssue.SHRUGGING, issues, requireConfirmation = true)
             if (feedback != null) {
                 pendingVoiceAction = VoiceAction.SHRUGGING
@@ -212,7 +209,7 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
     ): PullUpFeedback {
         attemptedReps++
         val hasFullDepth = maxHeightRatio >= TOP_CLEARANCE_RATIO && minElbowAngle <= pullUpType.topElbowAngle
-        val shouldCount = validTop && hasFullDepth && !currentRepBlocked
+        val shouldCount = validTop && hasFullDepth
 
         return if (shouldCount) {
             count++
@@ -237,14 +234,13 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
 
     private fun resetCurrentRep(metrics: PullUpMetrics) {
         validTop = false
-        currentRepBlocked = false
         maxHeightRatio = metrics.heightRatio
-        minElbowAngle = metrics.averageElbowAngle
+        minElbowAngle = metrics.smallestElbowAngle
     }
 
     private fun updateRepRange(metrics: PullUpMetrics) {
         maxHeightRatio = max(maxHeightRatio, metrics.heightRatio)
-        minElbowAngle = min(minElbowAngle, metrics.averageElbowAngle)
+        minElbowAngle = min(minElbowAngle, metrics.smallestElbowAngle)
     }
 
     private fun buildResult(
@@ -381,13 +377,15 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
         val leftElbowAngle: Float,
         val rightElbowAngle: Float,
         val averageElbowAngle: Float,
+        val smallestElbowAngle: Float,
         val armSymmetryDelta: Float,
         val heightRatio: Float,
         val torsoLeanRatio: Float,
         val shoulderBalanceRatio: Float,
         val centerShiftRatio: Float,
         val earShoulderRatio: Float,
-        val earShoulderHipRatio: Float,
+        val leftEarShoulderHipRatio: Float,
+        val rightEarShoulderHipRatio: Float,
         val hipCenter: Point,
         val hipVector: Point,
         val isGripCorrect: Boolean,
@@ -397,6 +395,7 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
         val isPulling: Boolean,
         val isTopPosition: Boolean,
         val isNearTopButLow: Boolean,
+        val isNotHighEnough: Boolean,
         val isLoweringButNotExtended: Boolean,
         val isSwinging: Boolean,
         val isShrugging: Boolean
@@ -441,18 +440,13 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
         val centerShiftRatio = prevMetrics?.let { previous ->
             (hipCenter - previous.hipCenter).length() / shoulderWidth
         } ?: 0f
-        val horizontalCenterShiftRatio = prevMetrics?.let { previous ->
-            abs(hipCenter.x - previous.hipCenter.x) / shoulderWidth
-        } ?: 0f
         val hipSwingAngle = prevMetrics?.let { previous ->
             angleBetween(hipVector, previous.hipVector)
         } ?: 0f
         val earShoulderRatio = (earCenter.y - shoulderCenter.y) / shoulderWidth
         val hipDistance = (rightHip - leftHip).length().coerceAtLeast(EPSILON)
-        val earShoulderHipRatio = (
-            (point(keypoints, LEFT_EAR) - leftShoulder).length() +
-                (point(keypoints, RIGHT_EAR) - rightShoulder).length()
-            ) / 2f / hipDistance
+        val leftEarShoulderHipRatio = (point(keypoints, LEFT_EAR) - leftShoulder).length() / hipDistance
+        val rightEarShoulderHipRatio = (point(keypoints, RIGHT_EAR) - rightShoulder).length() / hipDistance
         val headProjection = dot(nose - shoulderCenter, bodyAxisDown)
         val wristProjection = dot(wristCenter - shoulderCenter, bodyAxisDown)
         val heightRatio = (wristProjection - headProjection) / shoulderWidth
@@ -460,13 +454,15 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
         val rightWristProjection = dot(rightWrist - rightShoulder, bodyAxisDown)
         val wristsAreMovingUp = leftWristProjection < 0f && rightWristProjection < 0f
         val bodyStable = prevMetrics == null || centerShiftRatio < PULLING_CENTER_SHIFT_RATIO
-        val shrugReference = calibratedEarShoulderHipRatio ?: DEFAULT_EAR_SHOULDER_HIP_RATIO
+        val leftShrugReference = bodyProportions?.leftEarShoulderCoefficient ?: DEFAULT_LEFT_EAR_SHOULDER_COEFFICIENT
+        val rightShrugReference = bodyProportions?.rightEarShoulderCoefficient ?: DEFAULT_RIGHT_EAR_SHOULDER_COEFFICIENT
         val isGripCorrect = gripRatio in pullUpType.gripMin..pullUpType.gripMax
         val isStartPosition = largestElbowAngle >= pullUpType.startAngle
         val isArmBalanced = armSymmetryDelta <= ARM_SYMMETRY_WARNING_DEGREES && wristsAboveShoulders
         val isBodyAligned = shoulderHipLineDelta <= pullUpType.verticalLineTolerance
         val isPulling = wristsAreMovingUp && smallestElbowAngle < PULLING_ELBOW_ANGLE && bodyStable
         val isTopPosition = smallestElbowAngle < pullUpType.topElbowAngle && heightRatio > TOP_CLEARANCE_RATIO
+        val isNotHighEnough = heightRatio < NOT_HIGH_CLEARANCE_RATIO
         val isNearTopButLow =
             smallestElbowAngle < pullUpType.topElbowAngle &&
                 heightRatio > NOT_HIGH_CLEARANCE_RATIO &&
@@ -474,10 +470,10 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
         val isLoweringButNotExtended =
             averageElbowAngle >= LOWERING_ELBOW_WARNING_ANGLE &&
                 averageElbowAngle < pullUpType.startAngle
-        val isSwinging = hipSwingAngle > SWING_HIP_VECTOR_ANGLE ||
-            horizontalCenterShiftRatio >= SWING_CENTER_SHIFT_RATIO
+        val isSwinging = hipSwingAngle > SWING_HIP_VECTOR_ANGLE
         val isShrugging = smallestElbowAngle < pullUpType.topElbowAngle &&
-            earShoulderHipRatio < shrugReference * SHRUG_CALIBRATION_FACTOR
+            leftEarShoulderHipRatio < leftShrugReference * SHRUG_CALIBRATION_FACTOR &&
+            rightEarShoulderHipRatio < rightShrugReference * SHRUG_CALIBRATION_FACTOR
 
         return PullUpMetrics(
             shoulderWidth = shoulderWidth,
@@ -485,13 +481,15 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
             leftElbowAngle = leftElbowAngle,
             rightElbowAngle = rightElbowAngle,
             averageElbowAngle = averageElbowAngle,
+            smallestElbowAngle = smallestElbowAngle,
             armSymmetryDelta = armSymmetryDelta,
             heightRatio = heightRatio,
             torsoLeanRatio = torsoLeanRatio,
             shoulderBalanceRatio = shoulderBalanceRatio,
             centerShiftRatio = centerShiftRatio,
             earShoulderRatio = earShoulderRatio,
-            earShoulderHipRatio = earShoulderHipRatio,
+            leftEarShoulderHipRatio = leftEarShoulderHipRatio,
+            rightEarShoulderHipRatio = rightEarShoulderHipRatio,
             hipCenter = hipCenter,
             hipVector = hipVector,
             isGripCorrect = isGripCorrect,
@@ -501,6 +499,7 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
             isPulling = isPulling,
             isTopPosition = isTopPosition,
             isNearTopButLow = isNearTopButLow,
+            isNotHighEnough = isNotHighEnough,
             isLoweringButNotExtended = isLoweringButNotExtended,
             isSwinging = isSwinging,
             isShrugging = isShrugging
@@ -703,10 +702,10 @@ class PullUpAnalyzer(private val pullUpType: PullUpType) : ExerciseAnalyzer {
         const val ARM_SYMMETRY_WARNING_DEGREES = 30f
         const val TORSO_LEAN_WARNING_RATIO = 0.30f
         const val SHOULDER_BALANCE_WARNING_RATIO = 0.25f
-        const val PULLING_CENTER_SHIFT_RATIO = 0.65f
-        const val SWING_CENTER_SHIFT_RATIO = 0.45f
+        const val PULLING_CENTER_SHIFT_RATIO = 0.30f
         const val SWING_HIP_VECTOR_ANGLE = 10f
-        const val DEFAULT_EAR_SHOULDER_HIP_RATIO = 0.85f
+        const val DEFAULT_LEFT_EAR_SHOULDER_COEFFICIENT = 0.85f
+        const val DEFAULT_RIGHT_EAR_SHOULDER_COEFFICIENT = 0.85f
         const val SHRUG_CALIBRATION_FACTOR = 0.90f
         const val CONFIRM_FRAMES = 5
         const val COOLDOWN_FRAMES = 30

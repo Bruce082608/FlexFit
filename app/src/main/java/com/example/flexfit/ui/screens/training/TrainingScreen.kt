@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -91,6 +92,9 @@ import com.example.flexfit.ml.PoseDetectorCallback
 import com.example.flexfit.ml.PoseDetectorWrapper
 import com.example.flexfit.ml.VideoAnalysisController
 import com.example.flexfit.ml.VoiceAction
+import com.example.flexfit.ui.i18n.LocalAppLanguage
+import com.example.flexfit.ui.i18n.l10n
+import com.example.flexfit.ui.i18n.workoutName
 import com.example.flexfit.ui.screens.workout.WorkoutResultDialog
 import com.example.flexfit.ui.theme.AccentPurple
 import com.example.flexfit.ui.theme.DeepPurple
@@ -121,6 +125,7 @@ fun TrainingScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val appLanguage = LocalAppLanguage.current
     val viewModel: TrainingSessionViewModel = viewModel(
         factory = TrainingSessionViewModel.Factory(context.applicationContext)
     )
@@ -139,6 +144,16 @@ fun TrainingScreen(
     var trainingMode by remember(initialMode) { mutableStateOf(initialMode) }
     var showAnalysisOverlay by remember { mutableStateOf(false) }
     var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_FRONT) }
+    var showCameraPermissionDialog by remember { mutableStateOf(false) }
+    var showVideoPermissionDialog by remember { mutableStateOf(false) }
+
+    val videoPermission = remember {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+    }
 
     // ── Video picker launcher ─────────────────────────────────────────────────
     val videoPickerLauncher = rememberLauncherForActivityResult(
@@ -310,12 +325,7 @@ fun TrainingScreen(
                         if (hasVideoPermission) {
                             videoPickerLauncher.launch("video/*")
                         } else {
-                            val permission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                Manifest.permission.READ_MEDIA_VIDEO
-                            } else {
-                                Manifest.permission.READ_EXTERNAL_STORAGE
-                            }
-                            videoPermissionLauncher.launch(permission)
+                            showVideoPermissionDialog = true
                         }
                     },
                     onBack = {
@@ -326,14 +336,7 @@ fun TrainingScreen(
                         }
                     },
                     hasVideoPermission = hasVideoPermission,
-                    onRequestVideoPermission = {
-                        val permission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                            Manifest.permission.READ_MEDIA_VIDEO
-                        } else {
-                            Manifest.permission.READ_EXTERNAL_STORAGE
-                        }
-                        videoPermissionLauncher.launch(permission)
-                    }
+                    onRequestVideoPermission = { showVideoPermissionDialog = true }
                 )
             }
 
@@ -380,19 +383,45 @@ fun TrainingScreen(
             // ── Camera permission rationale ──────────────────────────────────
             cameraPermissionState.status.shouldShowRationale -> {
                 PermissionRationale(
-                    onRequestPermission = { cameraPermissionState.launchPermissionRequest() }
+                    onRequestPermission = { showCameraPermissionDialog = true }
                 )
             }
 
             // ── Request camera permission ─────────────────────────────────────
             else -> {
                 PermissionRequest(
-                    onRequestPermission = { cameraPermissionState.launchPermissionRequest() }
+                    onRequestPermission = { showCameraPermissionDialog = true }
                 )
             }
         }
 
         // ── Pose overlay (always on top of camera/video) ────────────────────────
+        if (showCameraPermissionDialog) {
+            PermissionRequestDialog(
+                title = l10n("Camera Permission Required"),
+                message = l10n("Please grant camera permission for motion recognition"),
+                confirmText = l10n("Grant Permission"),
+                onDismiss = { showCameraPermissionDialog = false },
+                onConfirm = {
+                    showCameraPermissionDialog = false
+                    cameraPermissionState.launchPermissionRequest()
+                }
+            )
+        }
+
+        if (showVideoPermissionDialog) {
+            PermissionRequestDialog(
+                title = l10n("Video Permission Required"),
+                message = l10n("FlexFit needs access to your videos to analyze your workout form."),
+                confirmText = l10n("Grant Permission"),
+                onDismiss = { showVideoPermissionDialog = false },
+                onConfirm = {
+                    showVideoPermissionDialog = false
+                    videoPermissionLauncher.launch(videoPermission)
+                }
+            )
+        }
+
         PoseOverlay(
             keypoints = uiState.lastKeypoints,
             landmarkConfidences = uiState.lastLandmarkConfidences,
@@ -416,7 +445,7 @@ fun TrainingScreen(
 
         // ── Top bar ───────────────────────────────────────────────────────────
         TrainingTopBar(
-            title = analyzer.exerciseName,
+            title = appLanguage.workoutName(analyzer.exerciseName),
             isActive = uiState.isWorkoutActive,
             isPaused = uiState.isPaused,
             isVideoMode = trainingMode == TrainingMode.VIDEO,
@@ -517,7 +546,7 @@ fun TrainingScreen(
         if (uiState.showResultDialog && result != null) {
             LaunchedEffect(result.id) {
                 if (llmState is com.example.flexfit.data.llm.LlmAnalysisState.Idle) {
-                    viewModel.requestLlmAnalysis(result)
+                    viewModel.requestLlmAnalysis(result, appLanguage)
                 }
             }
 
@@ -533,8 +562,8 @@ fun TrainingScreen(
                     analyzer.reset()
                     viewModel.closeResultAndReset()
                 },
-                onRequestLlmAnalysis = { viewModel.requestLlmAnalysis(result) },
-                onRetryLlmAnalysis = { viewModel.retryLlmAnalysis(result) }
+                onRequestLlmAnalysis = { viewModel.requestLlmAnalysis(result, appLanguage) },
+                onRetryLlmAnalysis = { viewModel.retryLlmAnalysis(result, appLanguage) }
             )
         }
     }
@@ -670,7 +699,7 @@ private fun TrainingTopBar(
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = l10n("Back"),
                 tint = Color.White
             )
         }
@@ -697,7 +726,7 @@ private fun TrainingTopBar(
                     ) {
                         Icon(
                             Icons.Default.Cameraswitch,
-                            contentDescription = "Switch Camera",
+                            contentDescription = l10n("Switch Camera"),
                             tint = Color.White
                         )
                     }
@@ -710,7 +739,7 @@ private fun TrainingTopBar(
                 ) {
                     Icon(
                         if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                        contentDescription = if (isPaused) "Resume" else "Pause",
+                        contentDescription = if (isPaused) l10n("Resume") else l10n("Pause"),
                         tint = Color.White
                     )
                 }
@@ -723,7 +752,7 @@ private fun TrainingTopBar(
                 ) {
                     Icon(
                         Icons.Default.Refresh,
-                        contentDescription = "Reset",
+                        contentDescription = l10n("Reset"),
                         tint = Color.White
                     )
                 }
@@ -739,7 +768,7 @@ private fun TrainingTopBar(
                 ) {
                     Icon(
                         Icons.Default.Cameraswitch,
-                        contentDescription = "Switch Camera",
+                        contentDescription = l10n("Switch Camera"),
                         tint = Color.White
                     )
                 }
@@ -794,7 +823,7 @@ private fun TrainingBottomPanel(
                             color = AccentPurple
                         )
                         Text(
-                            text = "Reps",
+                            text = l10n("Reps"),
                             fontSize = 12.sp,
                             color = TextSecondary
                         )
@@ -818,7 +847,7 @@ private fun TrainingBottomPanel(
                         color = phaseColor(result.phase.tone)
                     )
                     Text(
-                        text = "Phase",
+                        text = l10n("Phase"),
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
@@ -841,7 +870,7 @@ private fun TrainingBottomPanel(
                         color = Color.White
                     )
                     Text(
-                        text = "Duration",
+                        text = l10n("Duration"),
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
@@ -856,7 +885,7 @@ private fun TrainingBottomPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Accuracy",
+                    text = l10n("Accuracy"),
                     fontSize = 12.sp,
                     color = TextSecondary
                 )
@@ -887,9 +916,9 @@ private fun TrainingBottomPanel(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                ScoreBadge(label = "Depth", value = result.scores.depth)
-                ScoreBadge(label = "Align", value = result.scores.alignment)
-                ScoreBadge(label = "Stable", value = result.scores.stability)
+                ScoreBadge(label = l10n("Depth"), value = result.scores.depth)
+                ScoreBadge(label = l10n("Align"), value = result.scores.alignment)
+                ScoreBadge(label = l10n("Stable"), value = result.scores.stability)
             }
         }
     }
@@ -951,7 +980,7 @@ private fun TrainingControls(
             ) {
                 Icon(
                     if (isVideoMode) Icons.Default.Videocam else Icons.Default.VideoLibrary,
-                    contentDescription = "Video Mode",
+                    contentDescription = l10n("Video Mode"),
                     tint = if (isVideoMode) Color.White else DeepPurple
                 )
             }
@@ -968,7 +997,7 @@ private fun TrainingControls(
                 ) {
                     Icon(Icons.Default.PlayCircle, contentDescription = null, modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Analyze Video", fontWeight = FontWeight.SemiBold)
+                    Text(l10n("Analyze Video"), fontWeight = FontWeight.SemiBold)
                 }
             } else {
                 // Start camera button
@@ -982,7 +1011,7 @@ private fun TrainingControls(
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Start", fontWeight = FontWeight.SemiBold)
+                    Text(l10n("Start"), fontWeight = FontWeight.SemiBold)
                 }
             }
         } else {
@@ -995,9 +1024,9 @@ private fun TrainingControls(
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
             ) {
-                Icon(Icons.Default.Stop, contentDescription = "End Workout", modifier = Modifier.size(24.dp))
+                Icon(Icons.Default.Stop, contentDescription = l10n("End Workout"), modifier = Modifier.size(24.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("End", fontWeight = FontWeight.SemiBold)
+                Text(l10n("End"), fontWeight = FontWeight.SemiBold)
             }
 
             Spacer(modifier = Modifier.width(16.dp))
@@ -1013,7 +1042,7 @@ private fun TrainingControls(
             ) {
                 Icon(
                     if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                    contentDescription = if (isPaused) "Resume" else "Pause",
+                    contentDescription = if (isPaused) l10n("Resume") else l10n("Pause"),
                     tint = Color.White
                 )
             }
@@ -1152,7 +1181,7 @@ private fun VideoTrainingView(
                     CircularProgressIndicator(color = AccentPurple)
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Loading video...",
+                        text = l10n("Loading video..."),
                         color = Color.White,
                         fontSize = 16.sp
                     )
@@ -1170,14 +1199,14 @@ private fun VideoTrainingView(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Ready to analyze",
+                    text = l10n("Ready to analyze"),
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Tap \"Analyze Video\" below to start frame-by-frame analysis",
+                    text = l10n("Tap \"Analyze Video\" below to start frame-by-frame analysis"),
                     color = TextSecondary,
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center
@@ -1205,14 +1234,14 @@ private fun VideoTrainingView(
                         CircularProgressIndicator(color = AccentPurple)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Analyzing frames...",
+                            text = l10n("Analyzing frames..."),
                             color = Color.White,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Pose detection in progress",
+                            text = l10n("Pose detection in progress"),
                             color = TextSecondary,
                             fontSize = 12.sp
                         )
@@ -1274,7 +1303,7 @@ private fun VideoPickerView(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "Video Analysis",
+                    text = l10n("Video Analysis"),
                     style = MaterialTheme.typography.headlineSmall,
                     color = Color.White,
                     fontWeight = FontWeight.Bold
@@ -1283,7 +1312,7 @@ private fun VideoPickerView(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Select a workout video to analyze your form",
+                    text = l10n("Select a workout video to analyze your form"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                     textAlign = TextAlign.Center
@@ -1305,14 +1334,14 @@ private fun VideoPickerView(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Permission Required",
+                                text = l10n("Permission Required"),
                                 color = Color.White,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 16.sp
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "FlexFit needs access to your videos to analyze your workout form.",
+                                text = l10n("FlexFit needs access to your videos to analyze your workout form."),
                                 color = TextSecondary,
                                 fontSize = 14.sp,
                                 textAlign = TextAlign.Center
@@ -1325,7 +1354,7 @@ private fun VideoPickerView(
                                 colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
                                 modifier = Modifier.height(48.dp)
                             ) {
-                                Text("Grant Permission")
+                                Text(l10n("Grant Permission"))
                             }
                         }
                     }
@@ -1337,14 +1366,14 @@ private fun VideoPickerView(
                     ) {
                         Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Choose Video")
+                        Text(l10n("Choose Video"))
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 TextButton(onClick = onBack) {
-                    Text("Back", color = TextSecondary)
+                    Text(l10n("Back"), color = TextSecondary)
                 }
             }
         }
@@ -1409,12 +1438,60 @@ private fun FeedbackOverlay(
 }
 
 @Composable
+private fun PermissionRequestDialog(
+    title: String,
+    message: String,
+    confirmText: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                tint = AccentPurple
+            )
+        },
+        title = {
+            Text(
+                text = title,
+                color = TextPrimary,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+                textAlign = TextAlign.Start
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+            ) {
+                Text(confirmText)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(l10n("Not Now"))
+            }
+        }
+    )
+}
+
+@Composable
 private fun PermissionRequest(onRequestPermission: () -> Unit) {
     PermissionMessage(
         iconColor = AccentPurple,
-        title = "Camera Permission Required",
-        message = "Please grant camera permission for motion recognition",
-        action = "Grant Permission",
+        title = l10n("Camera Permission Required"),
+        message = l10n("Please grant camera permission for motion recognition"),
+        action = l10n("Grant Permission"),
         onAction = onRequestPermission
     )
 }
@@ -1423,9 +1500,9 @@ private fun PermissionRequest(onRequestPermission: () -> Unit) {
 private fun PermissionRationale(onRequestPermission: () -> Unit) {
     PermissionMessage(
         iconColor = WarningOrange,
-        title = "Camera Permission Denied",
-        message = "Motion recognition requires camera permission. Please enable it in settings.",
-        action = "Request Again",
+        title = l10n("Camera Permission Denied"),
+        message = l10n("Motion recognition requires camera permission. Please enable it in settings."),
+        action = l10n("Request Again"),
         onAction = onRequestPermission
     )
 }
@@ -1499,7 +1576,7 @@ private fun ErrorView(message: String) {
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Initialization Error",
+            text = l10n("Initialization Error"),
             style = MaterialTheme.typography.headlineSmall,
             color = Color.White,
             fontWeight = FontWeight.Bold

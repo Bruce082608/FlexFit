@@ -12,18 +12,19 @@ import com.example.flexfit.data.model.LlmResponseFormat
 object LlmPromptBuilder {
 
     fun buildRequest(
-        workoutStats: LlmWorkoutStats
+        workoutStats: LlmWorkoutStats,
+        responseLanguage: LlmResponseLanguage = LlmResponseLanguage.ENGLISH
     ): LlmAnalysisRequest {
         return LlmAnalysisRequest(
             model = BuildConfig.LLM_MODEL.ifBlank { "deepseek-chat" },
             messages = listOf(
                 LlmMessage(
                     role = "system",
-                    content = SYSTEM_PROMPT
+                    content = buildSystemPrompt(responseLanguage)
                 ),
                 LlmMessage(
                     role = "user",
-                    content = buildUserContent(workoutStats)
+                    content = buildUserContent(workoutStats, responseLanguage)
                 )
             ),
             temperature = 0.7,
@@ -32,9 +33,13 @@ object LlmPromptBuilder {
         )
     }
 
-    private fun buildUserContent(stats: LlmWorkoutStats): String {
+    private fun buildUserContent(
+        stats: LlmWorkoutStats,
+        responseLanguage: LlmResponseLanguage
+    ): String {
         return """
 You are a professional fitness coach analyzing a workout session.
+Write the entire analysis in ${responseLanguage.promptName}. You may translate exercise names naturally.
 
 Workout Summary:
 - Exercise: ${stats.exerciseType}
@@ -62,9 +67,12 @@ ${stats.topIssues.takeIf { it.isNotEmpty() }?.let { "\nTop Issues to Address:\n$
 
     private fun buildResponseFormat() = LlmResponseFormat(type = "json_object")
 
-    private const val SYSTEM_PROMPT = """
+    private fun buildSystemPrompt(responseLanguage: LlmResponseLanguage) = """
 You are a certified fitness coach providing post-workout analysis.
 Be encouraging but specific. Focus on actionable advice.
+Language requirement:
+- Write every JSON string value in ${responseLanguage.promptName}.
+- Keep the JSON keys exactly as shown below.
 Respond ONLY with valid JSON matching this exact shape:
 {
   "summary": "Overall performance evaluation in 1-2 sentences",
@@ -74,6 +82,14 @@ Respond ONLY with valid JSON matching this exact shape:
 }
 Do not include any text outside the JSON response.
 """
+}
+
+enum class LlmResponseLanguage(
+    val cacheKey: String,
+    val promptName: String
+) {
+    ENGLISH("en", "English"),
+    CHINESE("zh", "Simplified Chinese")
 }
 
 data class LlmWorkoutStats(

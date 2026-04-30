@@ -86,16 +86,16 @@ class PullUpAnalyzerTest {
     }
 
     @Test
-    fun swingingFrames_emitWarningAndBlockRep() {
+    fun swingingFrames_emitWarning() {
         val analyzer = PullUpAnalyzer(PullUpType.NORMAL)
 
         analyzer.analyze(readyPose(), timestamp = 1L)
 
-        var result = analyzer.analyze(pullingPose(hipShiftX = 0.22f), timestamp = 2L)
+        var result = analyzer.analyze(pullingPose(), timestamp = 2L)
         var warningResult: ExerciseAnalysisResult? = null
         for (frame in 3L..7L) {
-            val shift = if (frame % 2L == 0L) 0.22f else -0.22f
-            result = analyzer.analyze(pullingPose(hipShiftX = shift), timestamp = frame)
+            val tilt = if (frame % 2L == 0L) 0.08f else -0.08f
+            result = analyzer.analyze(pullingPose(hipTilt = tilt), timestamp = frame)
             if (result.feedback?.type == FeedbackType.WARNING) {
                 warningResult = result
             }
@@ -147,7 +147,7 @@ class PullUpAnalyzerTest {
         setPoint(24, 0.15f, -0.20f)
     }
 
-    private fun pullingPose(hipShiftX: Float = 0f): FloatArray = PoseKeypoints.empty().apply {
+    private fun pullingPose(hipShiftX: Float = 0f, hipTilt: Float = 0f): FloatArray = PoseKeypoints.empty().apply {
         setPoint(0, 0f, 0.88f)
         setPoint(7, -0.08f, 0.84f)
         setPoint(8, 0.08f, 0.84f)
@@ -159,8 +159,8 @@ class PullUpAnalyzerTest {
         setPoint(15, -0.32f, 0.75f)
         setPoint(16, 0.32f, 0.75f)
 
-        setPoint(23, -0.15f + hipShiftX, -0.20f)
-        setPoint(24, 0.15f + hipShiftX, -0.20f)
+        setPoint(23, -0.15f + hipShiftX, -0.20f + hipTilt)
+        setPoint(24, 0.15f + hipShiftX, -0.20f - hipTilt)
     }
 
     private fun topPose(): FloatArray = PoseKeypoints.empty().apply {

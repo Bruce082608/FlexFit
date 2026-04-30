@@ -48,6 +48,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.flexfit.data.model.ExerciseType
 import com.example.flexfit.ml.PullUpType
+import com.example.flexfit.ui.i18n.LocalAppLanguage
+import com.example.flexfit.ui.i18n.exerciseDescription
+import com.example.flexfit.ui.i18n.exerciseName
+import com.example.flexfit.ui.i18n.l10n
+import com.example.flexfit.ui.i18n.pullUpTypeName
 import com.example.flexfit.ui.screens.training.TrainingMode
 import com.example.flexfit.ui.theme.AccentPurple
 import com.example.flexfit.ui.theme.DeepPurple
@@ -73,13 +78,14 @@ fun WorkoutSetupScreen(
 
     val canStart = selectedMode != null &&
         (exercise != ExerciseType.PULL_UP || selectedPullUpType != null)
+    val appLanguage = LocalAppLanguage.current
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = exercise.displayName,
+                        text = appLanguage.exerciseName(exercise),
                         color = TextPrimary,
                         fontWeight = FontWeight.Bold
                     )
@@ -88,7 +94,7 @@ fun WorkoutSetupScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = l10n("Back"),
                             tint = TextPrimary
                         )
                     }
@@ -110,7 +116,7 @@ fun WorkoutSetupScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "Training source",
+                text = l10n("Training source"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary
@@ -121,16 +127,16 @@ fun WorkoutSetupScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TrainingSourceOption(
-                    title = "Camera",
-                    subtitle = "Real-time detection",
+                    title = l10n("Camera"),
+                    subtitle = l10n("Real-time detection"),
                     icon = Icons.Default.CameraAlt,
                     selected = selectedMode == TrainingMode.CAMERA,
                     modifier = Modifier.weight(1f),
                     onClick = { selectedMode = TrainingMode.CAMERA }
                 )
                 TrainingSourceOption(
-                    title = "Video",
-                    subtitle = "Upload analysis",
+                    title = l10n("Video"),
+                    subtitle = l10n("Upload analysis"),
                     icon = Icons.Default.VideoLibrary,
                     selected = selectedMode == TrainingMode.VIDEO,
                     modifier = Modifier.weight(1f),
@@ -141,7 +147,7 @@ fun WorkoutSetupScreen(
             if (exercise == ExerciseType.PULL_UP) {
                 Spacer(modifier = Modifier.height(22.dp))
                 Text(
-                    text = "Pull Up mode",
+                    text = l10n("Pull Up mode"),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary
@@ -185,7 +191,7 @@ fun WorkoutSetupScreen(
                 )
                 Spacer(modifier = Modifier.size(8.dp))
                 Text(
-                    text = "Start",
+                    text = l10n("Start"),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -196,6 +202,7 @@ fun WorkoutSetupScreen(
 
 @Composable
 private fun SetupHeader(exercise: ExerciseType) {
+    val appLanguage = LocalAppLanguage.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -224,14 +231,14 @@ private fun SetupHeader(exercise: ExerciseType) {
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = exercise.displayName,
+                    text = appLanguage.exerciseName(exercise),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = exercise.description,
+                    text = appLanguage.exerciseDescription(exercise),
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary
                 )
@@ -289,6 +296,7 @@ private fun PullUpModeOption(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val appLanguage = LocalAppLanguage.current
     SelectableSetupCard(
         selected = selected,
         modifier = Modifier.fillMaxWidth(),
@@ -322,13 +330,19 @@ private fun PullUpModeOption(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "${type.displayName} Pull Up",
+                    text = appLanguage.text(
+                        "${type.displayName} Pull Up",
+                        "${appLanguage.pullUpTypeName(type)}引体向上"
+                    ),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary
                 )
                 Text(
-                    text = "${type.gripMin}-${type.gripMax}x shoulder width",
+                    text = appLanguage.text(
+                        "${type.gripMin}-${type.gripMax}x shoulder width",
+                        "${type.gripMin}-${type.gripMax}${l10n("shoulder width")}"
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )

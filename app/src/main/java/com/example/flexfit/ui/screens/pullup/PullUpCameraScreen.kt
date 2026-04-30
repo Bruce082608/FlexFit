@@ -1,7 +1,10 @@
 package com.example.flexfit.ui.screens.pullup
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import com.example.flexfit.data.repository.BodyCalibrationRepository
 import com.example.flexfit.ml.PullUpAnalyzer
 import com.example.flexfit.ml.PullUpType
 import com.example.flexfit.ui.screens.training.TrainingMode
@@ -20,7 +23,10 @@ fun PullUpCameraScreen(
             else -> PullUpType.NORMAL
         }
     }
-    val analyzer = remember(pullUpType) { PullUpAnalyzer(pullUpType) }
+    val bodyProportions by BodyCalibrationRepository.bodyProportions.collectAsState()
+    val analyzer = remember(pullUpType, bodyProportions) {
+        PullUpAnalyzer(pullUpType, bodyProportions)
+    }
 
     TrainingScreen(
         analyzer = analyzer,

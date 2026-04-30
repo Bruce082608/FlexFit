@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.flexfit.data.llm.LlmAnalysisRepository
 import com.example.flexfit.data.llm.LlmAnalysisState
+import com.example.flexfit.data.llm.LlmResponseLanguage
 import com.example.flexfit.data.llm.LlmWorkoutStats
 import com.example.flexfit.data.model.LlmAnalysisData
 import com.example.flexfit.data.model.WorkoutResult
@@ -13,6 +14,7 @@ import com.example.flexfit.data.repository.WorkoutRecordRepository
 import com.example.flexfit.ml.ExerciseAnalysisResult
 import com.example.flexfit.ml.ExerciseIssue
 import com.example.flexfit.ml.FeedbackType
+import com.example.flexfit.ui.i18n.AppLanguage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -366,7 +368,10 @@ class TrainingSessionViewModel(
         _uiState.value = TrainingSessionUiState()
     }
 
-    fun requestLlmAnalysis(result: WorkoutResult) {
+    fun requestLlmAnalysis(
+        result: WorkoutResult,
+        appLanguage: AppLanguage = AppLanguage.ENGLISH
+    ) {
         val stats = LlmWorkoutStats(
             exerciseType = result.exerciseType,
             durationSeconds = result.durationSeconds,
@@ -383,11 +388,14 @@ class TrainingSessionViewModel(
             keyErrors = result.mainIssues,
             topIssues = result.improvementSuggestions
         )
-        llmRepository.requestAnalysis(stats)
+        llmRepository.requestAnalysis(stats, appLanguage.toLlmResponseLanguage())
     }
 
-    fun retryLlmAnalysis(result: WorkoutResult) {
-        requestLlmAnalysis(result)
+    fun retryLlmAnalysis(
+        result: WorkoutResult,
+        appLanguage: AppLanguage = AppLanguage.ENGLISH
+    ) {
+        requestLlmAnalysis(result, appLanguage)
     }
 
     fun saveWorkoutResult(result: WorkoutResult) {
@@ -488,4 +496,11 @@ class TrainingSessionViewModel(
         val labels: Map<String, String>,
         val suggestions: Map<String, String>
     )
+}
+
+private fun AppLanguage.toLlmResponseLanguage(): LlmResponseLanguage {
+    return when (this) {
+        AppLanguage.ENGLISH -> LlmResponseLanguage.ENGLISH
+        AppLanguage.CHINESE -> LlmResponseLanguage.CHINESE
+    }
 }

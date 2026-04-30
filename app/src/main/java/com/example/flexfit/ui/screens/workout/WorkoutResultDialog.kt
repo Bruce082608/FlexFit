@@ -29,6 +29,10 @@ import com.example.flexfit.data.model.AnalysisSource
 import com.example.flexfit.data.model.PerformanceLevel
 import com.example.flexfit.data.model.WorkoutAnalysisResult
 import com.example.flexfit.data.model.WorkoutResult
+import com.example.flexfit.ui.i18n.LocalAppLanguage
+import com.example.flexfit.ui.i18n.l10n
+import com.example.flexfit.ui.i18n.performanceLevelName
+import com.example.flexfit.ui.i18n.workoutName
 import com.example.flexfit.ui.theme.*
 import kotlin.math.roundToInt
 
@@ -41,6 +45,8 @@ fun WorkoutResultDialog(
     onRequestLlmAnalysis: () -> Unit = {},
     onRetryLlmAnalysis: () -> Unit = {}
 ) {
+    val appLanguage = LocalAppLanguage.current
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -101,14 +107,14 @@ fun WorkoutResultDialog(
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text(
-                            text = result.performanceLevel.displayName,
+                            text = appLanguage.performanceLevelName(result.performanceLevel),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
 
                         Text(
-                            text = "Workout Complete!",
+                            text = l10n("Workout Complete!"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.White.copy(alpha = 0.8f)
                         )
@@ -119,7 +125,7 @@ fun WorkoutResultDialog(
 
                 // Exercise type
                 Text(
-                    text = result.exerciseType,
+                    text = appLanguage.workoutName(result.exerciseType),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
@@ -141,7 +147,7 @@ fun WorkoutResultDialog(
                     // Reps completed
                     StatItem(
                         value = "${result.completedReps}/${result.totalReps}",
-                        label = "Reps",
+                        label = l10n("Reps"),
                         icon = Icons.Default.Repeat,
                         color = DeepPurple
                     )
@@ -149,7 +155,7 @@ fun WorkoutResultDialog(
                     // Duration
                     StatItem(
                         value = result.formattedDuration,
-                        label = "Duration",
+                        label = l10n("Duration"),
                         icon = Icons.Default.Timer,
                         color = AccentPurple
                     )
@@ -157,7 +163,7 @@ fun WorkoutResultDialog(
                     // Accuracy
                     StatItem(
                         value = "${result.averageAccuracy.roundToInt()}%",
-                        label = "Score",
+                        label = l10n("Score"),
                         icon = Icons.Default.Speed,
                         color = SuccessGreen
                     )
@@ -185,7 +191,7 @@ fun WorkoutResultDialog(
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = "Details",
+                            text = l10n("Details"),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -195,28 +201,28 @@ fun WorkoutResultDialog(
 
                         DetailRow(
                             icon = Icons.Default.CheckCircle,
-                            label = "Success Rate",
+                            label = l10n("Success Rate"),
                             value = "${result.successRate.roundToInt()}%",
                             valueColor = if (result.successRate >= 75) SuccessGreen else WarningOrange
                         )
 
                         DetailRow(
                             icon = Icons.Default.LocalFireDepartment,
-                            label = "Calories Burned",
+                            label = l10n("Calories Burned"),
                             value = "${result.caloriesBurned.roundToInt()} kcal",
                             valueColor = WarningOrange
                         )
 
                         DetailRow(
                             icon = Icons.Default.Error,
-                            label = "Errors",
+                            label = l10n("Errors"),
                             value = "${result.errorsCount}",
                             valueColor = if (result.errorsCount <= 3) SuccessGreen else ErrorRed
                         )
 
                         DetailRow(
                             icon = Icons.Default.Warning,
-                            label = "Warnings",
+                            label = l10n("Warnings"),
                             value = "${result.warningsCount}",
                             valueColor = if (result.warningsCount <= 5) WarningOrange else ErrorRed
                         )
@@ -249,7 +255,7 @@ fun WorkoutResultDialog(
                             .height(50.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Discard")
+                        Text(l10n("Discard"))
                     }
 
                     Button(
@@ -266,7 +272,7 @@ fun WorkoutResultDialog(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Save")
+                        Text(l10n("Save"))
                     }
                 }
             }
@@ -283,7 +289,7 @@ private fun ScoreBreakdownCard(result: WorkoutResult) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Local Scores",
+                text = l10n("Local Scores"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
@@ -292,7 +298,7 @@ private fun ScoreBreakdownCard(result: WorkoutResult) {
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Real-time rule-based scores calculated from pose metrics during training.",
+                text = l10n("Real-time rule-based scores calculated from pose metrics during training."),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
             )
@@ -300,19 +306,19 @@ private fun ScoreBreakdownCard(result: WorkoutResult) {
             Spacer(modifier = Modifier.height(12.dp))
 
             ScoreRow(
-                label = "Depth",
+                label = l10n("Depth"),
                 value = result.depthScore,
-                description = "Range of motion and full rep completion."
+                description = l10n("Range of motion and full rep completion.")
             )
             ScoreRow(
-                label = "Alignment",
+                label = l10n("Alignment"),
                 value = result.alignmentScore,
-                description = "Left-right symmetry and joint positioning."
+                description = l10n("Left-right symmetry and joint positioning.")
             )
             ScoreRow(
-                label = "Stability",
+                label = l10n("Stability"),
                 value = result.stabilityScore,
-                description = "Body control, shoulder level, and torso steadiness."
+                description = l10n("Body control, shoulder level, and torso steadiness.")
             )
         }
     }
@@ -374,7 +380,7 @@ private fun IssueSummaryCard(result: WorkoutResult) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Rule-Based Issues",
+                text = l10n("Rule-Based Issues"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
@@ -383,7 +389,7 @@ private fun IssueSummaryCard(result: WorkoutResult) {
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Detected from local pose rules before AI analysis.",
+                text = l10n("Detected from local pose rules before AI analysis."),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
             )
@@ -393,8 +399,8 @@ private fun IssueSummaryCard(result: WorkoutResult) {
             val hasIssues = result.mainIssues.any { it != "No major issues detected" }
             if (!hasIssues) {
                 SummaryLine(
-                    title = "No major issues detected",
-                    detail = "Keep the same tempo and full range of motion.",
+                    title = l10n("No major issues detected"),
+                    detail = l10n("Keep the same tempo and full range of motion."),
                     color = SuccessGreen
                 )
             } else {
@@ -402,7 +408,7 @@ private fun IssueSummaryCard(result: WorkoutResult) {
                     SummaryLine(
                         title = issue,
                         detail = result.improvementSuggestions.getOrNull(index)
-                            ?: "Review this part of your form on the next set.",
+                            ?: l10n("Review this part of your form on the next set."),
                         color = ErrorRed
                     )
                 }
@@ -508,7 +514,7 @@ private fun AccuracyProgressBar(accuracy: Float) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Overall Local Score",
+                text = l10n("Overall Local Score"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary
             )
@@ -610,7 +616,7 @@ private fun AiAnalysisCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "AI Analysis",
+                        text = l10n("AI Analysis"),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -655,7 +661,7 @@ private fun AiAnalysisCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "Post-workout personalized coaching generated after the local scores are ready.",
+                text = l10n("Post-workout personalized coaching generated after the local scores are ready."),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
             )
@@ -665,7 +671,7 @@ private fun AiAnalysisCard(
             when (val state = analysisState) {
                 is LlmAnalysisState.Idle -> {
                     Text(
-                        text = "Get personalized insights and recommendations powered by AI.",
+                        text = l10n("Get personalized insights and recommendations powered by AI."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary
                     )
@@ -682,7 +688,7 @@ private fun AiAnalysisCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Analyze with AI")
+                        Text(l10n("Analyze with AI"))
                     }
                 }
 
@@ -699,7 +705,7 @@ private fun AiAnalysisCard(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Analyzing your workout...",
+                            text = l10n("Analyzing your workout..."),
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary
                         )
@@ -731,7 +737,7 @@ private fun AiAnalysisCard(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Retry AI Analysis")
+                            Text(l10n("Retry AI Analysis"))
                         }
                     } else {
                         Text(
@@ -752,7 +758,7 @@ private fun AiAnalysisCard(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Retry")
+                            Text(l10n("Retry"))
                         }
                     }
                 }
@@ -764,8 +770,8 @@ private fun AiAnalysisCard(
 @Composable
 private fun AnalysisResultContent(result: WorkoutAnalysisResult) {
     val sourceLabel = when (result.source) {
-        AnalysisSource.LLM -> "AI-powered"
-        AnalysisSource.LOCAL_FALLBACK -> "Local analysis"
+        AnalysisSource.LLM -> l10n("AI-powered")
+        AnalysisSource.LOCAL_FALLBACK -> l10n("Local analysis")
     }
     val sourceColor = when (result.source) {
         AnalysisSource.LLM -> AccentPurple
@@ -795,7 +801,7 @@ private fun AnalysisResultContent(result: WorkoutAnalysisResult) {
     if (result.strengths.isNotEmpty()) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Strengths",
+            text = l10n("Strengths"),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = SuccessGreen
@@ -809,7 +815,7 @@ private fun AnalysisResultContent(result: WorkoutAnalysisResult) {
     if (result.weaknesses.isNotEmpty()) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Areas for Improvement",
+            text = l10n("Areas for Improvement"),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = WarningOrange
@@ -823,7 +829,7 @@ private fun AnalysisResultContent(result: WorkoutAnalysisResult) {
     if (result.recommendations.isNotEmpty()) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Recommendations",
+            text = l10n("Recommendations"),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = AccentPurple

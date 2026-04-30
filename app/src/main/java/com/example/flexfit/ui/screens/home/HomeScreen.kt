@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -56,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.flexfit.data.repository.UserProfileRepository
 import com.example.flexfit.data.repository.WorkoutRecordRepository
+import com.example.flexfit.ui.i18n.LocalAppLanguage
+import com.example.flexfit.ui.i18n.l10n
 import com.example.flexfit.ui.navigation.Screen
 import com.example.flexfit.ui.theme.AccentPurple
 import com.example.flexfit.ui.theme.DeepPurple
@@ -79,6 +82,7 @@ fun HomeScreen(navController: NavController) {
     val averageAccuracy by WorkoutRecordRepository.averageAccuracy.collectAsState()
     val currentStreak by WorkoutRecordRepository.currentStreak.collectAsState()
     val nickname = profile.name.trim().ifBlank { "FlexFit User" }
+    val appLanguage = LocalAppLanguage.current
 
     Box(
         modifier = Modifier
@@ -95,7 +99,9 @@ fun HomeScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 36.dp)
+                .statusBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(top = 24.dp, bottom = 112.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -110,7 +116,7 @@ fun HomeScreen(navController: NavController) {
                     horizontalAlignment = Alignment.Start
                 ) {
                     Text(
-                        text = "${getGreeting()} $nickname",
+                        text = "${getGreeting(appLanguage)} $nickname",
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -119,7 +125,7 @@ fun HomeScreen(navController: NavController) {
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "Today's goal: complete one focused Pull Up or Shoulder Press session with clean form and stable local scores.",
+                        text = l10n("Today's goal: complete one focused Pull Up or Shoulder Press session with clean form and stable local scores."),
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White.copy(alpha = 0.76f),
                         lineHeight = MaterialTheme.typography.titleMedium.lineHeight
@@ -175,7 +181,7 @@ fun HomeScreen(navController: NavController) {
                         contentPadding = PaddingValues(horizontal = 20.dp)
                     ) {
                         Text(
-                            text = "Start",
+                            text = l10n("Start"),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center
@@ -218,14 +224,14 @@ private fun HomeProgressSection(
         ) {
             HomeStatCard(
                 icon = Icons.Default.SportsScore,
-                title = "Total Workouts",
+                title = l10n("Total Workouts"),
                 value = totalWorkouts.toString(),
                 color = DeepPurple,
                 modifier = Modifier.weight(1f)
             )
             HomeStatCard(
                 icon = Icons.Default.Schedule,
-                title = "Total Minutes",
+                title = l10n("Total Minutes"),
                 value = totalMinutes.toString(),
                 color = AccentPurple,
                 modifier = Modifier.weight(1f)
@@ -240,14 +246,14 @@ private fun HomeProgressSection(
         ) {
             HomeStatCard(
                 icon = Icons.AutoMirrored.Filled.TrendingUp,
-                title = "Avg Accuracy",
+                title = l10n("Avg Accuracy"),
                 value = "${averageAccuracy.toInt()}%",
                 color = SuccessGreen,
                 modifier = Modifier.weight(1f)
             )
             HomeStatCard(
                 icon = Icons.Default.LocalFireDepartment,
-                title = "Streak Days",
+                title = l10n("Streak Days"),
                 value = currentStreak.toString(),
                 color = WarningOrange,
                 modifier = Modifier.weight(1f)
@@ -417,11 +423,11 @@ private data class LineLayer(
     val speed: Float
 )
 
-private fun getGreeting(): String {
+private fun getGreeting(language: com.example.flexfit.ui.i18n.AppLanguage): String {
     val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
     return when {
-        hour < 12 -> "Good morning,"
-        hour < 17 -> "Good afternoon,"
-        else -> "Good evening,"
+        hour < 12 -> language.text("Good morning,", "早上好，")
+        hour < 17 -> language.text("Good afternoon,", "下午好，")
+        else -> language.text("Good evening,", "晚上好，")
     }
 }
