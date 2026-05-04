@@ -6,8 +6,9 @@ import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import java.util.Locale
 
-class ShoulderPressAnalyzer : ExerciseAnalyzer {
+class ShoulderPressAnalyzer : ExerciseAnalyzer, ExerciseDebugProvider {
     override val exerciseName: String = "Shoulder Press"
 
     private enum class ShoulderPressState {
@@ -25,7 +26,9 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
     private var maxElbowAngle = Float.NEGATIVE_INFINITY
     private var minStartDelta = Float.POSITIVE_INFINITY
     private var prevMetrics: ShoulderPressMetrics? = null
-    private var calibratedEarShoulderHipRatio: Float? = null
+    private var calibratedLeftEarShoulderHipRatio: Float? = null
+    private var calibratedRightEarShoulderHipRatio: Float? = null
+    private var lastMetrics: ShoulderPressMetrics? = null
     private var lastPreparationHint: String? = null
     private var hintCooldown = 0
     private var pendingVoiceAction: VoiceAction? = null
@@ -48,6 +51,7 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
         }
 
         val metrics = buildMetrics(keypoints)
+        lastMetrics = metrics
         val issues = mutableListOf<ExerciseIssue>()
         val feedback = if (!isReady) {
             handlePreparation(metrics, issues)
@@ -73,6 +77,27 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
         return MockPoseSequence.shoulderPressFrame(frameCount)
     }
 
+    override fun debugSnapshot(): ExerciseDebugSnapshot? {
+        val metrics = lastMetrics ?: return null
+        return ExerciseDebugSnapshot(
+            title = "Shoulder Press Debug",
+            values = listOf(
+                debugValue("Ready", if (isReady) "yes" else "no", "start confirmed", isReady),
+                debugValue("State", state.name.lowercase(), "preparing/down/up/top", true),
+                debugValue("Left elbow", metrics.leftElbowAngle.degrees(), "88-95 start, >150 top, >160 lockout", metrics.isStartPosition || metrics.isTopPosition),
+                debugValue("Right elbow", metrics.rightElbowAngle.degrees(), "88-95 start, >150 top, >160 lockout", metrics.isStartPosition || metrics.isTopPosition),
+                debugValue("Grip ratio", metrics.gripRatio.decimal(), "1.8-2.1", metrics.isGripCorrect),
+                debugValue("Arm symmetry", metrics.armSymmetryDelta.degrees(), "<30", metrics.isArmSymmetric),
+                debugValue("Body upright", metrics.bodyUprightDelta.degrees(), "<38", metrics.isBodyUpright),
+                debugValue("Elbow flare", metrics.elbowFlareRatio.decimal(), "<=2.1", !metrics.hasElbowFlare),
+                debugValue("Left shrug", metrics.leftEarShoulderHipRatio.decimal(), ">=${metrics.leftShrugThreshold.decimal()}", !metrics.isShrugging),
+                debugValue("Right shrug", metrics.rightEarShoulderHipRatio.decimal(), ">=${metrics.rightShrugThreshold.decimal()}", !metrics.isShrugging),
+                debugValue("Wrist angle L/R", "${metrics.leftForearmAngle.degrees()} / ${metrics.rightForearmAngle.degrees()}", "74-80", !metrics.hasBadWrist),
+                debugValue("Body lean", metrics.bodyLeanAngle.degrees(), "<=38", !metrics.isBodyLeaning)
+            )
+        )
+    }
+
     override fun reset() {
         state = ShoulderPressState.PREPARING
         count = 0
@@ -82,7 +107,9 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
         maxElbowAngle = Float.NEGATIVE_INFINITY
         minStartDelta = Float.POSITIVE_INFINITY
         prevMetrics = null
-        calibratedEarShoulderHipRatio = null
+        calibratedLeftEarShoulderHipRatio = null
+        calibratedRightEarShoulderHipRatio = null
+        lastMetrics = null
         lastPreparationHint = null
         hintCooldown = 0
         pendingVoiceAction = null
@@ -112,7 +139,8 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
 
         isReady = true
         state = ShoulderPressState.DOWN
-        calibratedEarShoulderHipRatio = metrics.earShoulderHipRatio
+        calibratedLeftEarShoulderHipRatio = metrics.leftEarShoulderHipRatio
+        calibratedRightEarShoulderHipRatio = metrics.rightEarShoulderHipRatio
         resetCurrentRep(metrics)
         pendingVoiceAction = VoiceAction.SHP_START
         return ExerciseFeedback("Start position confirmed. Ready to press!", FeedbackType.SUCCESS)
@@ -342,7 +370,12 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
         val startPositionDelta: Float,
         val elbowFlareRatio: Float,
         val armSymmetryDelta: Float,
-        val earShoulderHipRatio: Float,
+        val leftEarShoulderHipRatio: Float,
+        val rightEarShoulderHipRatio: Float,
+        val leftShrugThreshold: Float,
+        val rightShrugThreshold: Float,
+        val leftForearmAngle: Float,
+        val rightForearmAngle: Float,
         val bodyUprightDelta: Float,
         val bodyLeanAngle: Float,
         val isGripCorrect: Boolean,
@@ -385,10 +418,8 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
         val leftArmAxisAngle = angleBetween(leftUpperArm, bodyAxis)
         val rightArmAxisAngle = angleBetween(rightUpperArm, bodyAxis)
         val armSymmetryDelta = abs(leftArmAxisAngle - rightArmAxisAngle)
-        val earShoulderHipRatio = (
-            distance(point(keypoints, LEFT_EAR), leftShoulder) +
-                distance(point(keypoints, RIGHT_EAR), rightShoulder)
-            ) / 2f / hipWidth
+        val leftEarShoulderHipRatio = distance(point(keypoints, LEFT_EAR), leftShoulder) / hipWidth
+        val rightEarShoulderHipRatio = distance(point(keypoints, RIGHT_EAR), rightShoulder) / hipWidth
         val bodyUprightDelta = lineAngleDelta(leftHip, rightHip, leftShoulder, rightShoulder)
         val bodyLeanAngle = bodyUprightDelta
         val previous = prevMetrics
@@ -397,7 +428,10 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
             rightElbowAngle > previous.rightElbowAngle
         val topPosition = leftElbowAngle > TOP_POSITION_ELBOW_ANGLE && rightElbowAngle > TOP_POSITION_ELBOW_ANGLE
         val lockoutValid = leftElbowAngle > LOCKOUT_VALID_ELBOW_ANGLE && rightElbowAngle > LOCKOUT_VALID_ELBOW_ANGLE
-        val shrugReference = calibratedEarShoulderHipRatio ?: DEFAULT_EAR_SHOULDER_HIP_RATIO
+        val leftShrugReference = calibratedLeftEarShoulderHipRatio ?: DEFAULT_LEFT_EAR_SHOULDER_HIP_RATIO
+        val rightShrugReference = calibratedRightEarShoulderHipRatio ?: DEFAULT_RIGHT_EAR_SHOULDER_HIP_RATIO
+        val leftShrugThreshold = leftShrugReference * SHRUG_CALIBRATION_FACTOR
+        val rightShrugThreshold = rightShrugReference * SHRUG_CALIBRATION_FACTOR
         val leftForearmAngle = lineAngle(leftWrist, leftElbow, leftShoulder, rightShoulder)
         val rightForearmAngle = lineAngle(rightWrist, rightElbow, leftShoulder, rightShoulder)
         val badWrist = leftForearmAngle !in FOREARM_LINE_MIN_ANGLE..FOREARM_LINE_MAX_ANGLE ||
@@ -411,7 +445,12 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
             startPositionDelta = startPositionDelta,
             elbowFlareRatio = elbowFlareRatio,
             armSymmetryDelta = armSymmetryDelta,
-            earShoulderHipRatio = earShoulderHipRatio,
+            leftEarShoulderHipRatio = leftEarShoulderHipRatio,
+            rightEarShoulderHipRatio = rightEarShoulderHipRatio,
+            leftShrugThreshold = leftShrugThreshold,
+            rightShrugThreshold = rightShrugThreshold,
+            leftForearmAngle = leftForearmAngle,
+            rightForearmAngle = rightForearmAngle,
             bodyUprightDelta = bodyUprightDelta,
             bodyLeanAngle = bodyLeanAngle,
             isGripCorrect = gripRatio in GRIP_MIN_RATIO..GRIP_MAX_RATIO,
@@ -423,7 +462,8 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
             isTopPosition = topPosition,
             isLockoutValid = lockoutValid,
             notLockedOut = !lockoutValid,
-            isShrugging = earShoulderHipRatio < shrugReference * SHRUG_CALIBRATION_FACTOR,
+            isShrugging = leftEarShoulderHipRatio < leftShrugThreshold &&
+                rightEarShoulderHipRatio < rightShrugThreshold,
             hasElbowFlare = elbowFlareRatio > ELBOW_FLARE_RATIO,
             hasBadWrist = badWrist,
             isBodyLeaning = bodyLeanAngle > BODY_LEAN_ANGLE
@@ -441,7 +481,7 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
             "adjust_grip",
             "Adjust grip width",
             FeedbackType.WARNING,
-            "Hold the dumbbells about 1.6 to 1.9 times shoulder width apart.",
+            "Hold the dumbbells about 1.8 to 2.1 times shoulder width apart.",
             VoiceAction.SHP_ADJUST_GRIP
         ),
         ARMS_BALANCE(
@@ -521,6 +561,19 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
     private fun ExerciseIssue.toFeedback(): ExerciseFeedback {
         return ExerciseFeedback(label, severity)
     }
+
+    private fun debugValue(
+        label: String,
+        value: String,
+        threshold: String,
+        passed: Boolean
+    ): ExerciseDebugValue {
+        return ExerciseDebugValue(label, value, threshold, passed)
+    }
+
+    private fun Float.degrees(): String = "${String.format(Locale.US, "%.1f", this)} deg"
+
+    private fun Float.decimal(): String = String.format(Locale.US, "%.2f", this)
 
     private data class Point(val x: Float, val y: Float, val z: Float)
 
@@ -635,16 +688,17 @@ class ShoulderPressAnalyzer : ExerciseAnalyzer {
         const val START_POSITION_MAX_DELTA = 3.5f
         const val TOP_POSITION_ELBOW_ANGLE = 150f
         const val LOCKOUT_VALID_ELBOW_ANGLE = 160f
-        const val GRIP_MIN_RATIO = 1.6f
-        const val GRIP_MAX_RATIO = 1.9f
-        const val TARGET_GRIP_RATIO = 1.75f
+        const val GRIP_MIN_RATIO = 1.8f
+        const val GRIP_MAX_RATIO = 2.1f
+        const val TARGET_GRIP_RATIO = 1.95f
         const val ARM_SYMMETRY_WARNING_DEGREES = 30f
-        const val BODY_UPRIGHT_ANGLE = 20f
-        const val BODY_LEAN_ANGLE = 25f
-        const val ELBOW_FLARE_RATIO = 1.9f
+        const val BODY_UPRIGHT_ANGLE = 38f
+        const val BODY_LEAN_ANGLE = 38f
+        const val ELBOW_FLARE_RATIO = 2.1f
         const val FOREARM_LINE_MIN_ANGLE = 74f
         const val FOREARM_LINE_MAX_ANGLE = 80f
-        const val DEFAULT_EAR_SHOULDER_HIP_RATIO = 0.85f
+        const val DEFAULT_LEFT_EAR_SHOULDER_HIP_RATIO = 0.85f
+        const val DEFAULT_RIGHT_EAR_SHOULDER_HIP_RATIO = 0.85f
         const val SHRUG_CALIBRATION_FACTOR = 0.8f
         const val CONFIRM_FRAMES = 5
         const val COOLDOWN_FRAMES = 30

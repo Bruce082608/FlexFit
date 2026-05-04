@@ -10,6 +10,7 @@ import com.example.flexfit.data.llm.LlmResponseLanguage
 import com.example.flexfit.data.llm.LlmWorkoutStats
 import com.example.flexfit.data.model.LlmAnalysisData
 import com.example.flexfit.data.model.WorkoutResult
+import com.example.flexfit.data.repository.AppPreferencesRepository
 import com.example.flexfit.data.repository.WorkoutRecordRepository
 import com.example.flexfit.ml.ExerciseAnalysisResult
 import com.example.flexfit.ml.ExerciseIssue
@@ -370,7 +371,7 @@ class TrainingSessionViewModel(
 
     fun requestLlmAnalysis(
         result: WorkoutResult,
-        appLanguage: AppLanguage = AppLanguage.ENGLISH
+        appLanguage: AppLanguage = AppPreferencesRepository.language.value
     ) {
         val stats = LlmWorkoutStats(
             exerciseType = result.exerciseType,
@@ -393,7 +394,7 @@ class TrainingSessionViewModel(
 
     fun retryLlmAnalysis(
         result: WorkoutResult,
-        appLanguage: AppLanguage = AppLanguage.ENGLISH
+        appLanguage: AppLanguage = AppPreferencesRepository.language.value
     ) {
         requestLlmAnalysis(result, appLanguage)
     }

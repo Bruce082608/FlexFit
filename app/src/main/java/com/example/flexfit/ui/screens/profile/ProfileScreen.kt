@@ -1135,6 +1135,7 @@ fun BodyCalibrationScreen(onNavigateBack: () -> Unit) {
     val bodyProportions by BodyCalibrationRepository.bodyProportions.collectAsState()
     var isProcessing by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var calibrationSaved by remember { mutableStateOf(false) }
     var selectedPhotoUri by remember(bodyProportions?.sourceUri) { mutableStateOf(bodyProportions?.sourceUri) }
     val preview = rememberAvatarBitmap(selectedPhotoUri)
 
@@ -1151,15 +1152,17 @@ fun BodyCalibrationScreen(onNavigateBack: () -> Unit) {
             selectedPhotoUri = uri.toString()
             isProcessing = true
             statusMessage = null
+            calibrationSaved = false
             scope.launch {
                 val result = analyzeBodyCalibrationPhoto(context, uri)
                 result
                     .onSuccess { proportions ->
                         BodyCalibrationRepository.save(proportions)
-                        statusMessage = context.getString(android.R.string.ok)
+                        calibrationSaved = true
                     }
                     .onFailure { error ->
                         statusMessage = error.message ?: "Photo analysis failed."
+                        calibrationSaved = false
                     }
                 isProcessing = false
             }
@@ -1258,9 +1261,9 @@ fun BodyCalibrationScreen(onNavigateBack: () -> Unit) {
                         }
                     }
 
-                    if (statusMessage != null) {
+                    if (calibrationSaved || statusMessage != null) {
                         Text(
-                            text = if (statusMessage == context.getString(android.R.string.ok)) {
+                            text = if (calibrationSaved) {
                                 l10n("Body ratio coefficients saved.", "身体比例系数已保存。")
                             } else {
                                 statusMessage.orEmpty()

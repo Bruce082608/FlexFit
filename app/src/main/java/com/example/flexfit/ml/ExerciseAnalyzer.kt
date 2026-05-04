@@ -84,6 +84,22 @@ data class ExerciseAnalysisResult(
     }
 }
 
+data class ExerciseDebugValue(
+    val label: String,
+    val value: String,
+    val threshold: String,
+    val passed: Boolean
+)
+
+data class ExerciseDebugSnapshot(
+    val title: String,
+    val values: List<ExerciseDebugValue>
+)
+
+interface ExerciseDebugProvider {
+    fun debugSnapshot(): ExerciseDebugSnapshot?
+}
+
 interface ExerciseAnalyzer {
     val exerciseName: String
 

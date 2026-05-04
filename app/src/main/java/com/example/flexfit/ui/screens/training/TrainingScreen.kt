@@ -25,9 +25,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -86,6 +89,8 @@ import com.example.flexfit.audio.VoiceGuideManager
 import com.example.flexfit.audio.VoiceType
 import com.example.flexfit.ml.ExerciseAnalysisResult
 import com.example.flexfit.ml.ExerciseAnalyzer
+import com.example.flexfit.ml.ExerciseDebugProvider
+import com.example.flexfit.ml.ExerciseDebugSnapshot
 import com.example.flexfit.ml.ExercisePhaseTone
 import com.example.flexfit.ml.FeedbackType
 import com.example.flexfit.ml.PoseDetectorCallback
@@ -143,6 +148,7 @@ fun TrainingScreen(
     }
     var trainingMode by remember(initialMode) { mutableStateOf(initialMode) }
     var showAnalysisOverlay by remember { mutableStateOf(false) }
+    var showDebugMetrics by remember { mutableStateOf(false) }
     var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_FRONT) }
     var showCameraPermissionDialog by remember { mutableStateOf(false) }
     var showVideoPermissionDialog by remember { mutableStateOf(false) }
@@ -443,12 +449,22 @@ fun TrainingScreen(
             )
         }
 
+        val debugSnapshot = (analyzer as? ExerciseDebugProvider)?.debugSnapshot()
+        if (showDebugMetrics && trainingMode == TrainingMode.CAMERA && debugSnapshot != null) {
+            DebugMetricsOverlay(
+                snapshot = debugSnapshot,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+
         // ── Top bar ───────────────────────────────────────────────────────────
         TrainingTopBar(
             title = appLanguage.workoutName(analyzer.exerciseName),
             isActive = uiState.isWorkoutActive,
             isPaused = uiState.isPaused,
             isVideoMode = trainingMode == TrainingMode.VIDEO,
+            showDebugToggle = analyzer is ExerciseDebugProvider && trainingMode == TrainingMode.CAMERA,
+            isDebugVisible = showDebugMetrics,
             onBack = {
                 videoAnalysisController?.stopAnalysis()
                 onNavigateBack()
@@ -463,6 +479,7 @@ fun TrainingScreen(
                 analyzer.reset()
                 viewModel.resetSession()
             },
+            onToggleDebug = { showDebugMetrics = !showDebugMetrics },
             onSwitchCamera = ::switchCamera
         )
 
@@ -472,7 +489,7 @@ fun TrainingScreen(
             elapsedTime = uiState.elapsedTime,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 100.dp)
+                .padding(bottom = 132.dp)
         )
 
         // ── Control buttons ───────────────────────────────────────────────────
@@ -678,16 +695,20 @@ private fun TrainingTopBar(
     isActive: Boolean,
     isPaused: Boolean,
     isVideoMode: Boolean,
+    showDebugToggle: Boolean,
+    isDebugVisible: Boolean,
     onBack: () -> Unit,
     onStart: () -> Unit,
     onPause: () -> Unit,
     onReset: () -> Unit,
+    onToggleDebug: () -> Unit,
     onSwitchCamera: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .statusBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 22.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -716,6 +737,25 @@ private fun TrainingTopBar(
 
         if (isActive) {
             Row {
+                if (showDebugToggle) {
+                    IconButton(
+                        onClick = onToggleDebug,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(
+                                if (isDebugVisible) AccentPurple.copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.5f),
+                                CircleShape
+                            )
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = l10n("Debug Metrics"),
+                            tint = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+
                 // Camera switch button (only in camera mode)
                 if (!isVideoMode) {
                     IconButton(
@@ -758,23 +798,104 @@ private fun TrainingTopBar(
                 }
             }
         } else {
-            // Camera switch button (only in camera mode, shown when not active)
-            if (!isVideoMode) {
-                IconButton(
-                    onClick = onSwitchCamera,
+            Row {
+                if (showDebugToggle) {
+                    IconButton(
+                        onClick = onToggleDebug,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(
+                                if (isDebugVisible) AccentPurple.copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.5f),
+                                CircleShape
+                            )
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = l10n("Debug Metrics"),
+                            tint = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+
+                // Camera switch button (only in camera mode, shown when not active)
+                if (!isVideoMode) {
+                    IconButton(
+                        onClick = onSwitchCamera,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            Icons.Default.Cameraswitch,
+                            contentDescription = l10n("Switch Camera"),
+                            tint = Color.White
+                        )
+                    }
+                } else {
+                    // Placeholder for alignment when in video mode
+                    Spacer(modifier = Modifier.width(40.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DebugMetricsOverlay(
+    snapshot: ExerciseDebugSnapshot,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .statusBarsPadding()
+            .padding(top = 86.dp, start = 16.dp, end = 16.dp)
+            .widthIn(max = 430.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.78f)),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Text(
+                text = snapshot.title,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            snapshot.values.forEach { item ->
+                Row(
                     modifier = Modifier
-                        .size(40.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Default.Cameraswitch,
-                        contentDescription = l10n("Switch Camera"),
-                        tint = Color.White
+                    Text(
+                        text = item.label,
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(0.95f)
+                    )
+                    Text(
+                        text = item.value,
+                        color = if (item.passed) SuccessGreen else WarningOrange,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.weight(0.9f)
+                    )
+                    Text(
+                        text = item.threshold,
+                        color = Color.White.copy(alpha = 0.72f),
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.weight(1.35f)
                     )
                 }
-            } else {
-                // Placeholder for alignment when in video mode
-                Spacer(modifier = Modifier.width(40.dp))
             }
         }
     }
@@ -966,7 +1087,8 @@ private fun TrainingControls(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 32.dp),
+            .navigationBarsPadding()
+            .padding(start = 32.dp, end = 32.dp, bottom = 28.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -125,10 +125,10 @@ class ShoulderPressAnalyzerTest {
     }
 
     private fun startPose(): FloatArray = basePose(
-        leftElbow = Point(-0.32f, 0.28f),
-        rightElbow = Point(0.32f, 0.28f),
-        leftWrist = Point(-0.32f, 0.48f),
-        rightWrist = Point(0.32f, 0.48f)
+        leftElbow = Point(-0.34f, 0.28f),
+        rightElbow = Point(0.34f, 0.28f),
+        leftWrist = Point(-0.34f, 0.48f),
+        rightWrist = Point(0.34f, 0.48f)
     )
 
     private fun pressingPose(): FloatArray = basePose(
