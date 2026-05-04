@@ -255,7 +255,7 @@ fun WorkoutResultDialog(
                             .height(50.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text(l10n("Discard"))
+                        Text(l10n("Done"))
                     }
 
                     Button(

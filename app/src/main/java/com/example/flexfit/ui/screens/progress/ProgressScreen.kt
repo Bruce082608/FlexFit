@@ -2,6 +2,7 @@ package com.example.flexfit.ui.screens.progress
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -122,6 +123,7 @@ private fun WorkoutRecordsSection(
     onClearAll: () -> Unit
 ) {
     var showClearDialog by remember { mutableStateOf(false) }
+    var selectedRecord by remember { mutableStateOf<WorkoutRecord?>(null) }
     val appLanguage = LocalAppLanguage.current
 
     Column {
@@ -209,7 +211,10 @@ private fun WorkoutRecordsSection(
             }
         } else {
             records.forEach { record ->
-                WorkoutRecordItem(record = record)
+                WorkoutRecordItem(
+                    record = record,
+                    onClick = { selectedRecord = record }
+                )
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
@@ -237,13 +242,25 @@ private fun WorkoutRecordsSection(
             }
         )
     }
+
+    selectedRecord?.let { record ->
+        WorkoutRecordDetailDialog(
+            record = record,
+            onDismiss = { selectedRecord = null }
+        )
+    }
 }
 
 @Composable
-private fun WorkoutRecordItem(record: WorkoutRecord) {
+private fun WorkoutRecordItem(
+    record: WorkoutRecord,
+    onClick: () -> Unit
+) {
     val appLanguage = LocalAppLanguage.current
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -294,6 +311,14 @@ private fun WorkoutRecordItem(record: WorkoutRecord) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(horizontalAlignment = Alignment.End) {
+                    if (record.llmAnalysis != null) {
+                        Text(
+                            text = l10n("AI Report"),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AccentPurple
+                        )
+                    }
                     Text(
                         text = appLanguage.text("${record.completedReps} reps", "${record.completedReps} 次"),
                         style = MaterialTheme.typography.bodyMedium,
@@ -332,6 +357,155 @@ private fun WorkoutRecordItem(record: WorkoutRecord) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WorkoutRecordDetailDialog(
+    record: WorkoutRecord,
+    onDismiss: () -> Unit
+) {
+    val appLanguage = LocalAppLanguage.current
+    val result = record.toWorkoutResult()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    text = appLanguage.workoutName(record.exerciseType),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Text(
+                    text = result.formattedDate,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                DetailLine(l10n("Reps"), "${record.completedReps}/${record.totalReps}")
+                DetailLine(l10n("Duration"), result.formattedDuration)
+                DetailLine(l10n("Accuracy"), "${record.averageAccuracy.toInt()}%")
+                DetailLine(l10n("Errors"), record.errorsCount.toString())
+                DetailLine(l10n("Warnings"), record.warningsCount.toString())
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = l10n("AI Analysis"),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val analysis = record.llmAnalysis
+                if (analysis == null) {
+                    Text(
+                        text = l10n("No AI report saved for this workout yet."),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                } else {
+                    Text(
+                        text = if (analysis.analysisSource == "llm") l10n("AI-powered") else l10n("Local analysis"),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (analysis.analysisSource == "llm") AccentPurple else TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = analysis.summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = TextPrimary
+                    )
+                    AnalysisList(title = l10n("Strengths"), items = analysis.strengths, color = SuccessGreen)
+                    AnalysisList(title = l10n("Areas for Improvement"), items = analysis.weaknesses, color = WarningOrange)
+                    AnalysisList(title = l10n("Recommendations"), items = analysis.recommendations, color = AccentPurple)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(l10n("OK"))
+            }
+        }
+    )
+}
+
+@Composable
+private fun DetailLine(
+    label: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = TextPrimary
+        )
+    }
+}
+
+@Composable
+private fun AnalysisList(
+    title: String,
+    items: List<String>,
+    color: Color
+) {
+    if (items.isEmpty()) return
+
+    Spacer(modifier = Modifier.height(12.dp))
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = color
+    )
+    Spacer(modifier = Modifier.height(4.dp))
+    items.forEach { item ->
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 3.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 7.dp)
+                    .size(6.dp)
+                    .background(color, RoundedCornerShape(3.dp))
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = item,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
         }
     }
 }

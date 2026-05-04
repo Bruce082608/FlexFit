@@ -17,6 +17,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -460,24 +463,12 @@ fun TrainingScreen(
         // ── Top bar ───────────────────────────────────────────────────────────
         TrainingTopBar(
             title = appLanguage.workoutName(analyzer.exerciseName),
-            isActive = uiState.isWorkoutActive,
-            isPaused = uiState.isPaused,
             isVideoMode = trainingMode == TrainingMode.VIDEO,
             showDebugToggle = analyzer is ExerciseDebugProvider && trainingMode == TrainingMode.CAMERA,
             isDebugVisible = showDebugMetrics,
             onBack = {
                 videoAnalysisController?.stopAnalysis()
                 onNavigateBack()
-            },
-            onStart = {
-                analyzer.reset()
-                voiceGuideManager.resetAll()
-                viewModel.startWorkout()
-            },
-            onPause = viewModel::togglePause,
-            onReset = {
-                analyzer.reset()
-                viewModel.resetSession()
             },
             onToggleDebug = { showDebugMetrics = !showDebugMetrics },
             onSwitchCamera = ::switchCamera
@@ -493,62 +484,48 @@ fun TrainingScreen(
         )
 
         // ── Control buttons ───────────────────────────────────────────────────
-        TrainingControls(
-            isWorkoutActive = uiState.isWorkoutActive,
-            isPaused = uiState.isPaused,
-            isVideoMode = trainingMode == TrainingMode.VIDEO,
-            hasVideo = videoUri != null,
-            onStart = {
-                analyzer.reset()
-                voiceGuideManager.resetAll()
-                viewModel.startWorkout()
-            },
-            onPause = viewModel::togglePause,
-            onEnd = {
-                if (trainingMode == TrainingMode.VIDEO && uiState.isAnalyzingVideo) {
-                    videoAnalysisController?.stopAnalysis()
-                    viewModel.setAnalyzingVideo(false)
-                    viewModel.showFeedback("Video analysis canceled.", FeedbackType.INFO)
-                } else {
-                    viewModel.endWorkout(analyzer.exerciseName)
-                }
-            },
-            onVideoModeToggle = {
-                val shouldReturnToPicker = trainingMode == TrainingMode.VIDEO && videoUri != null
-                videoUri = null
-                exoPlayer?.release()
-                exoPlayer = null
-                videoAnalysisController?.release()
-                videoAnalysisController = null
-                viewModel.resetVideoState()
-                trainingMode = if (shouldReturnToPicker) {
-                    TrainingMode.VIDEO
-                } else if (trainingMode == TrainingMode.VIDEO) {
-                    TrainingMode.CAMERA
-                } else {
-                    TrainingMode.VIDEO
-                }
-            },
-            onAnalyzeVideo = {
-                val controller = videoAnalysisController ?: return@TrainingControls
-                if (!poseDetectorInitialized) return@TrainingControls
+        if (trainingMode == TrainingMode.CAMERA || videoUri != null) {
+            TrainingControls(
+                isWorkoutActive = uiState.isWorkoutActive,
+                isPaused = uiState.isPaused,
+                isVideoMode = trainingMode == TrainingMode.VIDEO,
+                hasVideo = videoUri != null,
+                onStart = {
+                    analyzer.reset()
+                    voiceGuideManager.resetAll()
+                    viewModel.startWorkout()
+                },
+                onPause = viewModel::togglePause,
+                onEnd = {
+                    if (trainingMode == TrainingMode.VIDEO && uiState.isAnalyzingVideo) {
+                        videoAnalysisController?.stopAnalysis()
+                        viewModel.setAnalyzingVideo(false)
+                        viewModel.showFeedback("Video analysis canceled.", FeedbackType.INFO)
+                    } else {
+                        viewModel.endWorkout(analyzer.exerciseName)
+                    }
+                },
+                onAnalyzeVideo = {
+                    val controller = videoAnalysisController ?: return@TrainingControls
+                    if (!poseDetectorInitialized) return@TrainingControls
 
-                analyzer.reset()
-                voiceGuideManager.resetAll()
-                viewModel.resetSessionKeepsVideo()
-                viewModel.startWorkout()
-                controller.startAnalysis(
-                    poseDetector = poseDetector,
-                    analyzer = analyzer,
-                    frameIntervalMs = VideoAnalysisController.AnalysisSpeed.BALANCED.frameIntervalMs
-                ) { _, keypoints, landmarkConfidences, result ->
-                    viewModel.recordAnalysis(result, keypoints, landmarkConfidences)
-                    handleVoiceAction(result.voiceAction, voiceGuideManager)
-                }
-                viewModel.setAnalyzingVideo(true)
-            },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
+                    analyzer.reset()
+                    voiceGuideManager.resetAll()
+                    viewModel.resetSessionKeepsVideo()
+                    viewModel.startWorkout()
+                    controller.startAnalysis(
+                        poseDetector = poseDetector,
+                        analyzer = analyzer,
+                        frameIntervalMs = VideoAnalysisController.AnalysisSpeed.BALANCED.frameIntervalMs
+                    ) { _, keypoints, landmarkConfidences, result ->
+                        viewModel.recordAnalysis(result, keypoints, landmarkConfidences)
+                        handleVoiceAction(result.voiceAction, voiceGuideManager)
+                    }
+                    viewModel.setAnalyzingVideo(true)
+                },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
 
         // ── Feedback overlay ─────────────────────────────────────────────────
         FeedbackOverlay(
@@ -562,6 +539,7 @@ fun TrainingScreen(
         val llmState = uiState.llmAnalysisState
         if (uiState.showResultDialog && result != null) {
             LaunchedEffect(result.id) {
+                viewModel.saveWorkoutResult(result)
                 if (llmState is com.example.flexfit.data.llm.LlmAnalysisState.Idle) {
                     viewModel.requestLlmAnalysis(result, appLanguage)
                 }
@@ -692,15 +670,10 @@ private fun formatVideoTime(ms: Long): String {
 @Composable
 private fun TrainingTopBar(
     title: String,
-    isActive: Boolean,
-    isPaused: Boolean,
     isVideoMode: Boolean,
     showDebugToggle: Boolean,
     isDebugVisible: Boolean,
     onBack: () -> Unit,
-    onStart: () -> Unit,
-    onPause: () -> Unit,
-    onReset: () -> Unit,
     onToggleDebug: () -> Unit,
     onSwitchCamera: () -> Unit
 ) {
@@ -735,8 +708,14 @@ private fun TrainingTopBar(
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
-        if (isActive) {
-            Row {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.48f)),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 if (showDebugToggle) {
                     IconButton(
                         onClick = onToggleDebug,
@@ -756,69 +735,6 @@ private fun TrainingTopBar(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
-                // Camera switch button (only in camera mode)
-                if (!isVideoMode) {
-                    IconButton(
-                        onClick = onSwitchCamera,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(
-                            Icons.Default.Cameraswitch,
-                            contentDescription = l10n("Switch Camera"),
-                            tint = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-
-                IconButton(
-                    onClick = onPause,
-                    modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    Icon(
-                        if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                        contentDescription = if (isPaused) l10n("Resume") else l10n("Pause"),
-                        tint = Color.White
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                IconButton(
-                    onClick = onReset,
-                    modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = l10n("Reset"),
-                        tint = Color.White
-                    )
-                }
-            }
-        } else {
-            Row {
-                if (showDebugToggle) {
-                    IconButton(
-                        onClick = onToggleDebug,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(
-                                if (isDebugVisible) AccentPurple.copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.5f),
-                                CircleShape
-                            )
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = l10n("Debug Metrics"),
-                            tint = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-
-                // Camera switch button (only in camera mode, shown when not active)
                 if (!isVideoMode) {
                     IconButton(
                         onClick = onSwitchCamera,
@@ -833,7 +749,6 @@ private fun TrainingTopBar(
                         )
                     }
                 } else {
-                    // Placeholder for alignment when in video mode
                     Spacer(modifier = Modifier.width(40.dp))
                 }
             }
@@ -849,14 +764,16 @@ private fun DebugMetricsOverlay(
     Card(
         modifier = modifier
             .statusBarsPadding()
-            .padding(top = 86.dp, start = 16.dp, end = 16.dp)
-            .widthIn(max = 430.dp),
+            .padding(top = 126.dp, start = 16.dp, end = 16.dp)
+            .widthIn(max = 430.dp)
+            .heightIn(max = 330.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.78f)),
         shape = RoundedCornerShape(14.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(14.dp)
         ) {
             Text(
@@ -1080,93 +997,104 @@ private fun TrainingControls(
     onStart: () -> Unit,
     onPause: () -> Unit,
     onEnd: () -> Unit,
-    onVideoModeToggle: () -> Unit,
     onAnalyzeVideo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    Card(
         modifier = modifier
-            .fillMaxWidth()
+            .widthIn(max = 430.dp)
             .navigationBarsPadding()
             .padding(start = 32.dp, end = 32.dp, bottom = 28.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.72f)),
+        shape = RoundedCornerShape(26.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
     ) {
-        if (!isWorkoutActive) {
-            // Video mode toggle
-            IconButton(
-                onClick = onVideoModeToggle,
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(if (isVideoMode) AccentPurple else LightPurple, CircleShape)
-            ) {
-                Icon(
-                    if (isVideoMode) Icons.Default.Videocam else Icons.Default.VideoLibrary,
-                    contentDescription = l10n("Video Mode"),
-                    tint = if (isVideoMode) Color.White else DeepPurple
-                )
-            }
-
-            Spacer(modifier = Modifier.width(24.dp))
-
-            if (isVideoMode && hasVideo) {
-                // Analyze video button
-                Button(
-                    onClick = onAnalyzeVideo,
-                    modifier = Modifier.height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
-                ) {
-                    Icon(Icons.Default.PlayCircle, contentDescription = null, modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(l10n("Analyze Video"), fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (!isWorkoutActive) {
+                if (isVideoMode && hasVideo) {
+                    Button(
+                        onClick = onAnalyzeVideo,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(58.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                    ) {
+                        Icon(Icons.Default.PlayCircle, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = l10n("Analyze Video"),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = onStart,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(58.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = l10n("Start"),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             } else {
-                // Start camera button
                 Button(
-                    onClick = onStart,
+                    onClick = onEnd,
                     modifier = Modifier
-                        .height(56.dp)
-                        .width(150.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
+                        .weight(1f)
+                        .height(58.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Icon(Icons.Default.Stop, contentDescription = l10n("End Workout"), modifier = Modifier.size(22.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(l10n("Start"), fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = l10n("End"),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-            }
-        } else {
-            // End workout button
-            Button(
-                onClick = onEnd,
-                modifier = Modifier
-                    .height(56.dp)
-                    .width(100.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
-            ) {
-                Icon(Icons.Default.Stop, contentDescription = l10n("End Workout"), modifier = Modifier.size(24.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(l10n("End"), fontWeight = FontWeight.SemiBold)
-            }
 
-            Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
-            // Pause/Resume button
-            Button(
-                onClick = onPause,
-                modifier = Modifier.size(56.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isPaused) SuccessGreen else WarningOrange
-                )
-            ) {
-                Icon(
-                    if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                    contentDescription = if (isPaused) l10n("Resume") else l10n("Pause"),
-                    tint = Color.White
-                )
+                Button(
+                    onClick = onPause,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(58.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isPaused) SuccessGreen else WarningOrange
+                    )
+                ) {
+                    Icon(
+                        if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                        contentDescription = if (isPaused) l10n("Resume") else l10n("Pause"),
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isPaused) l10n("Resume") else l10n("Pause"),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

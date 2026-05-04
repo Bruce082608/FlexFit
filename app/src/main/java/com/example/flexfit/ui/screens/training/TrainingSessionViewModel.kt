@@ -373,6 +373,10 @@ class TrainingSessionViewModel(
         result: WorkoutResult,
         appLanguage: AppLanguage = AppPreferencesRepository.language.value
     ) {
+        if (WorkoutRecordRepository.getWorkoutById(result.id) != null) {
+            pendingSavedWorkoutId = result.id
+        }
+
         val stats = LlmWorkoutStats(
             exerciseType = result.exerciseType,
             durationSeconds = result.durationSeconds,
@@ -403,7 +407,7 @@ class TrainingSessionViewModel(
         val analysisData = _uiState.value.llmAnalysisState.toLlmAnalysisDataOrNull()
         WorkoutRecordRepository.addWorkoutResult(result, analysisData)
 
-        if (analysisData == null && _uiState.value.llmAnalysisState is LlmAnalysisState.Loading) {
+        if (analysisData == null && _uiState.value.llmAnalysisState !is LlmAnalysisState.Idle) {
             pendingSavedWorkoutId = result.id
         }
     }
